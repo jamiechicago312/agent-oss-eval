@@ -32,6 +32,7 @@ export {
   AnalysisError,
   AuthenticationError,
   BudgetError,
+  CancellationError,
   IncompleteDataError,
   InvalidInputError,
   NotFoundError,
@@ -42,6 +43,23 @@ export {
   exitCodeForError
 } from "./core/errors.js";
 export type { ErrorCode } from "./core/errors.js";
+export {
+  BudgetTracker,
+  createExecutionBudget,
+  emitProgress,
+  planAnalysis,
+  DEFAULT_EXECUTION_BUDGET
+} from "./core/planning.js";
+export type {
+  AnalysisPlan,
+  BudgetSnapshot,
+  ExecutionBudget,
+  ExecutionBudgetInput,
+  ProgressEvent,
+  SelectedWindow,
+  WorkEstimate,
+  WorkloadEstimate
+} from "./core/planning.js";
 export type {
   Confidence,
   Metric,
