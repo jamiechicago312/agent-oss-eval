@@ -10,7 +10,18 @@ interface AjvInstance {
 type AjvConstructor = new (options?: { strict?: boolean }) => AjvInstance;
 
 const require = createRequire(import.meta.url);
-const Ajv = (require("ajv") as { default: AjvConstructor }).default;
+function resolveAjv(module: unknown): AjvConstructor {
+  if (typeof module === "function") return module as AjvConstructor;
+  if (typeof module === "object" && module !== null) {
+    const exports = module as Record<string, unknown>;
+    for (const candidate of [exports.default, exports.Ajv]) {
+      if (typeof candidate === "function") return candidate as AjvConstructor;
+    }
+  }
+  throw new Error("Unable to load the Ajv constructor");
+}
+
+const Ajv = resolveAjv(require("ajv"));
 
 const schema = JSON.parse(
   readFileSync(new URL("../../schema/report.schema.json", import.meta.url), "utf8")
