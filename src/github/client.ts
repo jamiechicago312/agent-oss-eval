@@ -5,6 +5,7 @@ import type {
   CommentFixture,
   EventFixture,
   GitHubProvider,
+  OnboardingFixture,
   Page,
   PermissionFixture,
   PullRequestFixture,
@@ -87,6 +88,19 @@ interface RawCollaborator {
 
 interface RawRateLimit {
   rate: { remaining: number; limit: number; reset: number };
+}
+
+interface RawContent {
+  type: string;
+  path: string;
+}
+
+interface RawLabel {
+  name: string;
+}
+
+interface RawIssue {
+  pull_request?: unknown;
 }
 
 function isBot(user: { login?: string; type?: string } | null): boolean {
@@ -207,6 +221,44 @@ export class GitHubClient implements GitHubProvider {
     };
   }
 
+  async getOnboarding(ref: RepositoryRef): Promise<OnboardingFixture> {
+    const contributingGuidePath = await this.firstExistingContent(ref, ["CONTRIBUTING.md", ".github/CONTRIBUTING.md"]);
+    const codeOfConductPath = await this.firstExistingContent(ref, ["CODE_OF_CONDUCT.md", ".github/CODE_OF_CONDUCT.md"]);
+    const pullRequestTemplatePath = await this.firstExistingContent(ref, [".github/pull_request_template.md", "PULL_REQUEST_TEMPLATE.md"]);
+    const issueTemplatePaths = await this.listExistingContent(ref, [
+      ".github/ISSUE_TEMPLATE/bug.yml",
+      ".github/ISSUE_TEMPLATE/bug_report.md",
+      ".github/ISSUE_TEMPLATE/feature_request.md"
+    ]);
+    const labels = await this.request<RawLabel[]>(`/repos/${ref.fullName}/labels?per_page=100`);
+    const goodFirstIssueLabel = labels.data.find((label) => /good[- ]first[- ]issue/i.test(label.name))?.name ?? null;
+    if (goodFirstIssueLabel === null) {
+      return {
+        contributingGuidePath,
+        codeOfConductPath,
+        issueTemplatePaths,
+        pullRequestTemplatePath,
+        goodFirstIssueLabel: null,
+        goodFirstIssuesOpen: 0,
+        goodFirstIssuesClosed: 0
+      };
+    }
+    const labelQuery = encodeURIComponent(goodFirstIssueLabel);
+    const [open, closed] = await Promise.all([
+      this.request<RawIssue[]>(`/repos/${ref.fullName}/issues?state=open&labels=${labelQuery}&per_page=100`),
+      this.request<RawIssue[]>(`/repos/${ref.fullName}/issues?state=closed&labels=${labelQuery}&per_page=100`)
+    ]);
+    return {
+      contributingGuidePath,
+      codeOfConductPath,
+      issueTemplatePaths,
+      pullRequestTemplatePath,
+      goodFirstIssueLabel,
+      goodFirstIssuesOpen: open.data.filter((issue) => issue.pull_request === undefined).length,
+      goodFirstIssuesClosed: closed.data.filter((issue) => issue.pull_request === undefined).length
+    };
+  }
+
   private async request<T>(path: string): Promise<GitHubResponse<T>> {
     let attempt = 0;
     while (true) {
@@ -315,5 +367,30 @@ export class GitHubClient implements GitHubProvider {
     if (permissions?.push) return "push";
     if (permissions?.triage) return "triage";
     return "pull";
+  }
+
+  private async firstExistingContent(ref: RepositoryRef, paths: string[]): Promise<string | null> {
+    for (const path of paths) {
+      if (await this.contentExists(ref, path)) return path;
+    }
+    return null;
+  }
+
+  private async listExistingContent(ref: RepositoryRef, paths: string[]): Promise<string[]> {
+    const existing: string[] = [];
+    for (const path of paths) {
+      if (await this.contentExists(ref, path)) existing.push(path);
+    }
+    return existing;
+  }
+
+  private async contentExists(ref: RepositoryRef, path: string): Promise<boolean> {
+    try {
+      const response = await this.request<RawContent>(`/repos/${ref.fullName}/contents/${path}`);
+      return response.data.type === "file";
+    } catch (error) {
+      if (error instanceof NotFoundError) return false;
+      throw error;
+    }
   }
 }

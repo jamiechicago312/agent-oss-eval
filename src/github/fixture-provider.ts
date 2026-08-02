@@ -7,6 +7,7 @@ import type {
   FixtureScenario,
   GitHubProvider,
   Page,
+  OnboardingFixture,
   PermissionFixture,
   PullRequestFixture,
   RateLimitFixture,
@@ -44,16 +45,25 @@ export class FixtureProvider implements GitHubProvider {
     return this.page("listPullRequests", ref, page, this.scenario.pullRequests);
   }
 
-  async listReviews(ref: RepositoryRef, page: number): Promise<Page<ReviewFixture>> {
-    return this.page("listReviews", ref, page, this.scenario.reviews);
+  async listReviews(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<ReviewFixture>> {
+    const values = pullRequestNumber === undefined
+      ? this.scenario.reviews
+      : this.scenario.reviews.filter((review) => review.pullRequestNumber === pullRequestNumber);
+    return this.page("listReviews", ref, page, values);
   }
 
-  async listComments(ref: RepositoryRef, page: number): Promise<Page<CommentFixture>> {
-    return this.page("listComments", ref, page, this.scenario.comments);
+  async listComments(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<CommentFixture>> {
+    const values = pullRequestNumber === undefined
+      ? this.scenario.comments
+      : this.scenario.comments.filter((comment) => comment.pullRequestNumber === pullRequestNumber);
+    return this.page("listComments", ref, page, values);
   }
 
-  async listEvents(ref: RepositoryRef, page: number): Promise<Page<EventFixture>> {
-    return this.page("listEvents", ref, page, this.scenario.events);
+  async listEvents(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<EventFixture>> {
+    const values = pullRequestNumber === undefined
+      ? this.scenario.events
+      : this.scenario.events.filter((event) => event.pullRequestNumber === pullRequestNumber);
+    return this.page("listEvents", ref, page, values);
   }
 
   async getPermissions(ref: RepositoryRef): Promise<PermissionFixture[]> {
@@ -65,6 +75,11 @@ export class FixtureProvider implements GitHubProvider {
     this.requests.push("getRateLimit");
     this.failIfConfigured("getRateLimit");
     return this.scenario.rateLimit;
+  }
+
+  async getOnboarding(ref: RepositoryRef): Promise<OnboardingFixture> {
+    this.before("getOnboarding", ref);
+    return this.scenario.onboarding;
   }
 
   private async page<T>(operation: FixtureOperation, ref: RepositoryRef, page: number, values: T[]): Promise<Page<T>> {
