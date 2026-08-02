@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { runCli } from "./commands.js";
+import { runCliAsync } from "./commands.js";
 
-const exitCode = runCli(process.argv.slice(2));
-process.exitCode = exitCode;
+process.exitCode = await runCliAsync(process.argv.slice(2));

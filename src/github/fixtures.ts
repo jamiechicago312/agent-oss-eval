@@ -106,15 +106,24 @@ export const botHeavyRepositoryFixture: FixtureScenario = {
 export const partialRepositoryFixture: FixtureScenario = {
   ...smallRepositoryFixture,
   name: "partial",
+  reviews: [],
   completeness: "partial",
   limitations: ["Review history is unavailable in this fixture."]
+};
+
+export const failedRepositoryFixture: FixtureScenario = {
+  ...smallRepositoryFixture,
+  name: "failed",
+  completeness: "failed",
+  limitations: ["Repository metadata is unavailable in this fixture."]
 };
 
 export const fixtureScenarios: Record<string, FixtureScenario> = {
   small: smallRepositoryFixture,
   empty: emptyRepositoryFixture,
   "bot-heavy": botHeavyRepositoryFixture,
-  partial: partialRepositoryFixture
+  partial: partialRepositoryFixture,
+  failed: failedRepositoryFixture
 };
 
 export function getFixture(name: string): FixtureScenario | undefined {
