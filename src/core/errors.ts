@@ -15,6 +15,7 @@ export type ErrorCode =
   | "INVALID_INPUT"
   | "BUDGET_EXCEEDED"
   | "INCOMPLETE_DATA"
+  | "CANCELLED"
   | "ANALYSIS_ERROR";
 
 function redact(message: string): string {
@@ -95,6 +96,13 @@ export class IncompleteDataError extends OssEvalError {
   constructor(message = "The analysis completed with incomplete data") {
     super("INCOMPLETE_DATA", message, EXIT_CODES.materialLimitations);
     this.name = "IncompleteDataError";
+  }
+}
+
+export class CancellationError extends OssEvalError {
+  constructor(message = "The analysis was cancelled") {
+    super("CANCELLED", message);
+    this.name = "CancellationError";
   }
 }
 

@@ -16,6 +16,8 @@ export interface AnalysisConfig {
   since?: string;
   budgetMs?: number;
   maxApiRequests?: number;
+  maxConcurrency?: number;
+  maxPages?: number;
   format: OutputFormat;
   dbPath?: string;
   noCache: boolean;
@@ -23,6 +25,7 @@ export interface AnalysisConfig {
   strict: boolean;
   quiet: boolean;
   save: boolean;
+  dryRun: boolean;
 }
 
 export interface ConfigInput {
@@ -30,6 +33,8 @@ export interface ConfigInput {
   since?: string;
   budgetMs?: number;
   maxApiRequests?: number;
+  maxConcurrency?: number;
+  maxPages?: number;
   format?: string;
   dbPath?: string;
   noCache?: boolean;
@@ -37,6 +42,7 @@ export interface ConfigInput {
   strict?: boolean;
   quiet?: boolean;
   save?: boolean;
+  dryRun?: boolean;
 }
 
 const REPOSITORY_PART = /^[A-Za-z0-9_.-]+$/;
@@ -98,7 +104,8 @@ export function createConfig(repository: string, input: ConfigInput = {}): Analy
     includeRaw: input.includeRaw ?? false,
     strict: input.strict ?? false,
     quiet: input.quiet ?? false,
-    save: input.save ?? true
+    save: input.save ?? true,
+    dryRun: input.dryRun ?? false
   };
 
   if (input.since !== undefined) config.since = parseIsoTimestamp(input.since);
@@ -106,6 +113,8 @@ export function createConfig(repository: string, input: ConfigInput = {}): Analy
   if (input.maxApiRequests !== undefined) {
     config.maxApiRequests = positiveInteger(input.maxApiRequests, "Maximum API requests");
   }
+  if (input.maxConcurrency !== undefined) config.maxConcurrency = positiveInteger(input.maxConcurrency, "Maximum concurrency");
+  if (input.maxPages !== undefined) config.maxPages = positiveInteger(input.maxPages, "Maximum pages");
   if (input.dbPath !== undefined) {
     if (input.dbPath.trim() === "") throw new InvalidInputError("Database path cannot be empty");
     config.dbPath = input.dbPath;
