@@ -1,7 +1,16 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { Ajv } from "ajv";
 import type { Report } from "../../src/core/types.js";
+
+interface AjvInstance {
+  compile(schema: unknown): (data: unknown) => boolean;
+}
+
+type AjvConstructor = new (options?: { strict?: boolean }) => AjvInstance;
+
+const require = createRequire(import.meta.url);
+const Ajv = (require("ajv") as { default: AjvConstructor }).default;
 
 const schema = JSON.parse(
   readFileSync(new URL("../../schema/report.schema.json", import.meta.url), "utf8")
