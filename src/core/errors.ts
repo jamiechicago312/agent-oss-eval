@@ -11,6 +11,7 @@ export type ErrorCode =
   | "NOT_FOUND"
   | "RATE_LIMIT"
   | "SERVER_ERROR"
+  | "MALFORMED_RESPONSE"
   | "INVALID_INPUT"
   | "BUDGET_EXCEEDED"
   | "INCOMPLETE_DATA"
@@ -66,6 +67,13 @@ export class ServerError extends OssEvalError {
   constructor(message = "GitHub returned a server error") {
     super("SERVER_ERROR", message);
     this.name = "ServerError";
+  }
+}
+
+export class MalformedResponseError extends OssEvalError {
+  constructor(message = "GitHub returned a malformed response") {
+    super("MALFORMED_RESPONSE", message);
+    this.name = "MalformedResponseError";
   }
 }
 
