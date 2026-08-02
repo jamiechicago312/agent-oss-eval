@@ -103,9 +103,9 @@ export interface FixtureFailure {
 export interface GitHubProvider {
   getRepository(ref: RepositoryRef): Promise<RepositoryFixture>;
   listPullRequests(ref: RepositoryRef, page: number): Promise<Page<PullRequestFixture>>;
-  listReviews(ref: RepositoryRef, page: number): Promise<Page<ReviewFixture>>;
-  listComments(ref: RepositoryRef, page: number): Promise<Page<CommentFixture>>;
-  listEvents(ref: RepositoryRef, page: number): Promise<Page<EventFixture>>;
+  listReviews(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<ReviewFixture>>;
+  listComments(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<CommentFixture>>;
+  listEvents(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<EventFixture>>;
   getPermissions(ref: RepositoryRef): Promise<PermissionFixture[]>;
   getRateLimit(): Promise<RateLimitFixture>;
 }

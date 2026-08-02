@@ -2,6 +2,10 @@ export { runCli } from "./cli/commands.js";
 export type { CliOptions, CliWriter } from "./cli/commands.js";
 export { TOOL_NAME, TOOL_VERSION } from "./core/version.js";
 export { FixtureProvider, collectPages } from "./github/fixture-provider.js";
+export { GitHubClient } from "./github/client.js";
+export { authStatus, resolveCredentials } from "./auth/credentials.js";
+export type { AuthResolution, CredentialOptions, CredentialSource } from "./auth/credentials.js";
+export type { GitHubClientOptions } from "./github/client.js";
 export { getFixture, fixtureScenarios } from "./github/fixtures.js";
 export type {
   FixtureScenario,
