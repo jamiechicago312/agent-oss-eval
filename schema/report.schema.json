@@ -82,7 +82,7 @@
         "source": { "type": "string", "minLength": 1 },
         "window": { "type": "string", "minLength": 1 },
         "confidence": {
-          "enum": ["measured", "inferred", "cached", "unavailable"]
+          "enum": ["measured", "inferred", "cached", "partial", "unavailable"]
         }
       }
     }

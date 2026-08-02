@@ -3,7 +3,7 @@ import { acquireRepositoryData, type AcquisitionResult } from "./acquisition.js"
 import { calculateActivityMetrics } from "./metrics/activity.js";
 import { calculateExperienceMetrics } from "./metrics/experience.js";
 import { planAnalysis, type ExecutionBudget, type ProgressListener, type WorkloadEstimate } from "./planning.js";
-import type { Report, JsonObject, JsonValue } from "./types.js";
+import type { Metric, Report, JsonObject, JsonValue } from "./types.js";
 import { GitHubClient } from "../github/client.js";
 import type { GitHubProvider } from "../github/types.js";
 
@@ -59,6 +59,20 @@ function onboardingSignals(result: AcquisitionResult): JsonValue[] {
   ];
 }
 
+function markPartiallyCollectedMetrics(
+  metrics: Record<string, Metric>,
+  failedStages: string[]
+): Record<string, Metric> {
+  const reviewDataIncomplete = failedStages.some((stage) => stage.startsWith("reviews:"));
+  const pullRequestDataIncomplete = failedStages.includes("pullRequests");
+  return Object.fromEntries(Object.entries(metrics).map(([name, metric]) => {
+    const reviewMetric = metric.source === "github.pull_request_reviews";
+    const pullRequestMetric = metric.source === "github.pull_requests";
+    const incomplete = (reviewDataIncomplete && reviewMetric) || (pullRequestDataIncomplete && pullRequestMetric);
+    return [name, incomplete && metric.confidence !== "cached" ? { ...metric, confidence: "partial" } : metric];
+  }));
+}
+
 export async function analyzeRepository(options: AnalyzeOptions): Promise<Report> {
   const generatedAt = options.generatedAt ?? new Date().toISOString();
   const executionBudget: Partial<ExecutionBudget> = {
@@ -103,6 +117,10 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     onboarding: acquisition.onboarding,
     window: `${days}d`
   });
+  const metrics = markPartiallyCollectedMetrics(
+    { ...activity.metrics, ...experience.metrics },
+    acquisition.failedStages
+  );
   const limitations = [
     ...acquisition.limitations,
     ...activity.limitations,
@@ -127,7 +145,7 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     generated_at: generatedAt,
     window: { start: windowStart, end: windowEnd, days },
     repository: repositoryContext(acquisition),
-    metrics: { ...activity.metrics, ...experience.metrics },
+    metrics,
     signals: onboardingSignals(acquisition),
     comparison: null,
     provenance: {

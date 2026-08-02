@@ -4,7 +4,7 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 
-export type Confidence = "measured" | "inferred" | "cached" | "unavailable";
+export type Confidence = "measured" | "inferred" | "cached" | "partial" | "unavailable";
 export type ReportCompleteness = "complete" | "partial" | "failed";
 
 export interface ReportWindow {
