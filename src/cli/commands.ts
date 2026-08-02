@@ -105,6 +105,7 @@ function parseAnalyzeArgs(args: readonly string[]): { repository: string; format
     else if (flag === "--since" && value !== undefined) input.since = value;
     else if (flag === "--budget" && value !== undefined) input.budgetMs = parseDuration(value);
     else if (flag === "--max-api-requests" && value !== undefined) input.maxApiRequests = Number(value);
+    else if (flag === "--max-pages" && value !== undefined) input.maxPages = Number(value);
     else if (flag === "--format" && value !== undefined) format = parseOutputFormat(value);
     else if (flag === "--db" && value !== undefined) input.dbPath = value;
     else if (flag === "--no-cache") input.noCache = true;

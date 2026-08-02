@@ -32,6 +32,32 @@ describe("fixture CLI smoke test", () => {
     expect(stderr).toEqual([]);
   });
 
+  it("accepts an explicit page budget override", async () => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    const exitCode = await runCliAsync([
+      "analyze",
+      "fixture-owner/fixture-repo",
+      "--fixture",
+      "small",
+      "--window",
+      "90d",
+      "--max-pages",
+      "1",
+      "--format",
+      "json",
+      "--no-save"
+    ], {
+      stdout: (message) => stdout.push(message),
+      stderr: (message) => stderr.push(message)
+    });
+
+    const report = JSON.parse(stdout[0] ?? "{}");
+    expect(exitCode).toBe(0);
+    expect(report.provenance.plan.budget.maxPages).toBe(1);
+    expect(stderr).toEqual([]);
+  });
+
   it("returns invalid-input code for malformed repository input", async () => {
     const stderr: string[] = [];
     const exitCode = await runCliAsync(["analyze", "not-a-repository", "--fixture", "small", "--format", "json", "--no-save"], {

@@ -170,8 +170,12 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   const detailFailures = failedStages.filter((name) => /^(reviews|comments|events):/.test(name));
   if (detailFailures.length > 0 && stages.pullRequests?.status === "fetched") {
     const days = Math.round((end - start) / 86_400_000);
+    const budgetStopped = detailFailures.some((name) => stages[name]?.error?.toLowerCase() === "acquisition page budget exceeded");
+    const enrichmentStatus = budgetStopped
+      ? `stopped at the ${maxPages}-page acquisition limit; increase --max-pages to continue`
+      : "did not complete";
     limitations.push(
-      `${days}d pull-request window fully collected (${pullRequests.length} PRs); review/comment/event enrichment is partial because the acquisition budget was reached.`
+      `${days}d pull-request window fully collected (${pullRequests.length} PRs); review/comment/event enrichment is partial because it ${enrichmentStatus}.`
     );
   }
   return finish(repository, pullRequests, reviews, comments, events, permissions, onboarding, rateLimit, networkRequests, stages, limitations, failedStages);
