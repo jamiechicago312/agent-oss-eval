@@ -7,9 +7,12 @@ export { authStatus, resolveCredentials } from "./auth/credentials.js";
 export type { AuthResolution, CredentialOptions, CredentialSource } from "./auth/credentials.js";
 export type { GitHubClientOptions } from "./github/client.js";
 export { getFixture, fixtureScenarios } from "./github/fixtures.js";
+export { acquireRepositoryData } from "./core/acquisition.js";
+export type { AcquisitionOptions, AcquisitionProvenance, AcquisitionResult, AcquisitionStage } from "./core/acquisition.js";
 export type {
   FixtureScenario,
   GitHubProvider,
+  OnboardingFixture,
   Page,
   PullRequestFixture,
   RepositoryFixture,

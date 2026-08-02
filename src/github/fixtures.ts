@@ -59,7 +59,16 @@ const reviews = [
 const emptyArrays = {
   comments: [],
   events: [],
-  permissions: []
+  permissions: [],
+  onboarding: {
+    contributingGuidePath: "CONTRIBUTING.md",
+    codeOfConductPath: "CODE_OF_CONDUCT.md",
+    issueTemplatePaths: [".github/ISSUE_TEMPLATE/bug.yml"],
+    pullRequestTemplatePath: ".github/pull_request_template.md",
+    goodFirstIssueLabel: "good first issue",
+    goodFirstIssuesOpen: 1,
+    goodFirstIssuesClosed: 2
+  }
 };
 
 export const smallRepositoryFixture: FixtureScenario = {

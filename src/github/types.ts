@@ -66,6 +66,16 @@ export interface RateLimitFixture {
   resetAt: string;
 }
 
+export interface OnboardingFixture {
+  contributingGuidePath: string | null;
+  codeOfConductPath: string | null;
+  issueTemplatePaths: string[];
+  pullRequestTemplatePath: string | null;
+  goodFirstIssueLabel: string | null;
+  goodFirstIssuesOpen: number;
+  goodFirstIssuesClosed: number;
+}
+
 export interface FixtureScenario {
   name: string;
   repository: RepositoryFixture;
@@ -75,6 +85,7 @@ export interface FixtureScenario {
   events: EventFixture[];
   permissions: PermissionFixture[];
   rateLimit: RateLimitFixture;
+  onboarding: OnboardingFixture;
   completeness: "complete" | "partial" | "failed";
   limitations: string[];
 }
@@ -92,7 +103,9 @@ export type FixtureOperation =
   | "listComments"
   | "listEvents"
   | "getPermissions"
-  | "getRateLimit";
+  | "getRateLimit"
+  | "getOnboarding";
+
 
 export interface FixtureFailure {
   operation: FixtureOperation;
@@ -108,4 +121,5 @@ export interface GitHubProvider {
   listEvents(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<EventFixture>>;
   getPermissions(ref: RepositoryRef): Promise<PermissionFixture[]>;
   getRateLimit(): Promise<RateLimitFixture>;
+  getOnboarding(ref: RepositoryRef): Promise<OnboardingFixture>;
 }
