@@ -4,7 +4,7 @@
 
 `oss-eval` is a headless, agent-first tool that evaluates whether an open source project is a good fit for a contributor or an AI agent to invest in.
 
-It will analyze a GitHub repository using the user's own GitHub token, produce deterministic structured JSON, and optionally maintain local historical snapshots in SQLite. A human-readable terminal report and an MCP server are secondary interfaces over the same analysis engine.
+It will analyze a GitHub repository using the user's own GitHub token, persist durable analysis state in SQLite by default, and return deterministic structured JSON. A human-readable terminal report and an MCP server are secondary interfaces over the same analysis engine.
 
 The primary npm package and CLI name is `oss-eval`. `agent-oss-eval` is reserved as a compatibility/alias package.
 
@@ -25,12 +25,13 @@ The tool must make that conclusion inspectable. Every important metric needs a d
 ### Primary goals
 
 1. Evaluate one GitHub repository at a time for contributor fit.
-2. Make JSON the canonical output for AI agents.
+2. Make SQLite the default durable store and JSON the canonical interchange/result format for AI agents.
 3. Use the user's own GitHub credentials; do not require a central credential proxy.
-4. Support a rolling 90-day analysis window by default.
-5. Provide useful historical comparison without requiring a hosted database.
-6. Handle incomplete GitHub data and rate limits explicitly instead of silently inventing precision.
-7. Package the same core for a CLI, npm library, and MCP server.
+4. Support adaptive rolling analysis windows, with 90 days preferred and shorter windows such as 30 days when repository size, rate limits, or execution budgets require it.
+5. Provide useful historical comparison through a user-owned SQLite database without requiring a hosted database.
+6. Make a future shared public SQL database possible without replacing the local storage model.
+7. Handle incomplete GitHub data, rate limits, and long-running work explicitly instead of silently inventing precision.
+8. Package the same core for a CLI, npm library, and MCP server.
 
 ### Secondary goals
 
@@ -80,7 +81,7 @@ oss-eval analyze owner/repo --save --format json
 oss-eval compare owner/repo --format json
 ```
 
-The local SQLite store supplies prior snapshots. The database belongs to the user and is never required for a one-shot analysis.
+The local SQLite store supplies prior snapshots and reusable observations. The database belongs to the user and is the default persistence layer; one-shot/no-save mode remains available for ephemeral runs.
 
 ## 6. Proposed command surface
 
@@ -88,8 +89,10 @@ The exact flags can change during implementation, but the conceptual contract sh
 
 ```text
 oss-eval analyze <owner/repo>
-  --window 90d
+  --window auto|30d|90d|<days>
   --since <ISO-8601 timestamp>
+  --budget <duration>
+  --max-api-requests <number>
   --format human|json|jsonl
   --db <path>
   --no-cache
@@ -111,6 +114,8 @@ oss-eval auth status
 oss-eval doctor
 oss-eval version
 ```
+
+`--window auto` is the recommended agent default. It selects the largest useful window that can reasonably complete within the execution budget, preferring 90 days, then 30 days, then a smaller partial backfill if necessary. Explicit `--window 90d` means “attempt 90 days”; it must not silently become 30 days without reporting that change.
 
 Exit codes must be documented and stable:
 
@@ -153,7 +158,7 @@ The local database may contain public GitHub metadata, usernames, PR titles, rev
 
 ## 8. Storage model
 
-### Default
+### Default durable store
 
 Use SQLite stored locally at:
 
@@ -169,7 +174,16 @@ Fallback:
 
 Allow `--db`, `OSS_EVAL_DB`, and a programmatic path override.
 
-SQLite persists for local users, persistent coding workspaces, and mounted containers. It does not persist automatically in ephemeral CI or sandbox runs; those users can export snapshots as JSON.
+SQLite persists for local users, persistent coding workspaces, and mounted containers. It does not persist automatically in ephemeral CI or sandbox runs; those users can use an explicit output directory or export snapshots as JSON.
+
+JSON is not the primary database. JSON is used for:
+
+- machine-readable command results;
+- MCP structured content;
+- portable snapshot export/import;
+- debugging and fixture files.
+
+This separation is intentional: SQL is better for querying, deduplicating, resuming, and comparing observations, while JSON is better for transport between the tool and an agent.
 
 ### Initial schema
 
@@ -232,9 +246,17 @@ interface SnapshotStore {
 
 This leaves room for a future Postgres adapter without making hosted infrastructure part of v1.
 
+### Shared public database direction
+
+SQLite is the default local database, not the recommended multi-writer public server database. A shared public service should use a server database such as Postgres, with a compatible schema and ingestion API. A single SQLite file on a shared network volume would create locking, backup, concurrent-writer, and abuse-management problems.
+
+The future shared mode should accept sanitized, user-consented observations or reports rather than GitHub credentials. It should support deduplication by repository, source object ID, observed timestamp, and schema version. Public data should be clearly labeled as community-contributed, potentially stale, and subject to deletion or correction.
+
+The local SQLite schema should therefore be designed as the first implementation of a portable relational model. The future hosted adapter may use Postgres without changing the analyzer or report contract.
+
 ## 9. Canonical report contract
 
-The JSON schema is the product. It must be versioned and tested with fixtures.
+SQLite is the durable source of historical state. The JSON schema is the stable result/interchange contract exposed to the CLI, library callers, MCP clients, exports, and fixtures. Both must be versioned and tested.
 
 Top-level shape:
 
@@ -445,6 +467,110 @@ tests/
 
 Keep `core` free of CLI, SQLite, and MCP concerns.
 
+## 12.1 Adaptive execution for large repositories
+
+Repository size varies by orders of magnitude. A small project may require a few API calls; a project such as `openclaw/openclaw` may have enough pull requests, reviews, contributors, and pagination that a naive 90-day backfill exceeds a single agent invocation's time or rate-limit budget.
+
+The analyzer must plan work before starting the expensive stages.
+
+### Execution budget
+
+The runtime receives an execution budget containing some or all of:
+
+- maximum wall-clock duration;
+- maximum GitHub requests;
+- maximum concurrency;
+- maximum pages/items;
+- rate-limit reset deadline;
+- requested window;
+- whether resumable persistence is available.
+
+Sources may include CLI flags, MCP arguments, environment configuration, or a host-provided timeout. If no budget is known, use conservative defaults rather than assuming unlimited execution.
+
+### Planning stages
+
+1. Fetch lightweight repository metadata and current rate-limit status.
+2. Estimate workload from repository size, PR counts, recent activity, and cached observations.
+3. Choose a plan: 90-day, 30-day, explicit custom window, or resumable partial backfill.
+4. Persist the plan before expensive fetching begins.
+5. Execute bounded work in stages.
+6. Save completed observations and checkpoint state after each stage/page.
+7. Emit the final report with the selected window, work completed, work remaining, and limitations.
+
+The tool should prefer an existing cached 90-day history plus a small incremental refresh over rebuilding 90 days from scratch.
+
+### Window policy
+
+Default policy:
+
+```text
+auto:
+  use 90d when the estimated plan fits the available budget
+  otherwise use 30d when it fits
+  otherwise perform the largest resumable partial plan
+
+explicit 90d:
+  attempt 90d
+  never silently downgrade
+  return a partial report or a clear timeout/budget error
+
+explicit 30d:
+  analyze exactly 30d, subject to API failures and limits
+```
+
+The selected window is part of the report and comparison key. A 30-day report must not be compared to a 90-day report as though they were equivalent.
+
+### Throttling and backoff
+
+The GitHub client must support:
+
+- a global requests-per-second ceiling;
+- bounded concurrency;
+- automatic reduction in concurrency after secondary rate-limit responses;
+- pauses based on GitHub reset headers;
+- cancellation when the remaining budget cannot complete the current plan;
+- a dry planning mode that reports estimated work without fetching all data.
+
+Do not sleep invisibly for minutes. When waiting is necessary, expose the reason, estimated wait, and next action.
+
+### Progress events
+
+Long analyses should emit structured progress events, for example:
+
+```json
+{
+  "type": "progress",
+  "phase": "fetch_reviews",
+  "message": "Fetching review history",
+  "completed": 184,
+  "estimated_total": 420,
+  "requests_used": 61,
+  "rate_limit_remaining": 4821,
+  "window": "30d",
+  "resumable": true
+}
+```
+
+Human output may render this as a progress line. JSONL may emit one event per line. A final JSON report should contain the summary, not an unbounded stream of progress messages; callers that need events should use JSONL, the programmatic event API, or MCP progress notifications.
+
+### Resumability
+
+Every expensive analysis should have a durable job/checkpoint record when SQLite is enabled. A timeout must preserve completed pages and observations so the next invocation can continue rather than restart.
+
+The store should track:
+
+- analysis/job ID;
+- requested and selected window;
+- plan version;
+- current phase;
+- completed pages/items;
+- request and rate-limit counters;
+- checkpoint timestamp;
+- cancellation or failure reason;
+- remaining work estimate.
+
+This is especially important for massive repositories and for MCP hosts with short per-tool-call timeouts.
+
 ## 13. MCP server
 
 The MCP server is an adapter, not a second implementation.
@@ -454,12 +580,42 @@ Initial tool:
 ```text
 evaluate_repository
   repository: string
-  window_days?: number
+  window?: "auto" | "30d" | "90d" | number
+  time_budget_seconds?: number
+  max_api_requests?: number
   include_comparison?: boolean
   include_raw?: boolean
 ```
 
 Return the canonical JSON report as structured content. MCP errors should preserve the same categories and limitations as the CLI.
+
+### How the MCP server runs
+
+The first MCP implementation is a local stdio server. The user's MCP host (for example, an AI desktop app or coding-agent runtime) launches `oss-eval mcp` as a child process and communicates with it over stdin/stdout using MCP messages. The server uses the user's local environment, GitHub token, filesystem, and SQLite database. It does not require `oss-eval` to run as a public web service.
+
+The agent does not need to understand SQLite. It receives structured JSON over MCP while the server persists SQLite state locally.
+
+### Long-running MCP calls
+
+MCP supports progress notifications when the client and host implement them. The server should send progress notifications containing phase, completed work, estimated work, selected window, rate-limit status, and whether the job is resumable. It should send a human-readable waiting message when throttling or a GitHub reset pause is unavoidable.
+
+Because individual MCP hosts may impose tool-call timeouts, the server should support two modes:
+
+1. **Synchronous mode:** run within the requested budget and return a completed or partial report.
+2. **Resumable job mode:** start or continue a persisted analysis job, emit progress, and return a job status/report when the host cannot wait for the full backfill.
+
+The initial API can expose job mode through a second tool if needed:
+
+```text
+get_analysis_status
+  job_id: string
+
+continue_analysis
+  job_id: string
+  time_budget_seconds?: number
+```
+
+Never leave an agent waiting without a status signal. If the server must stop, return a structured partial result with `resumable: true`, the SQLite job ID, completed window, and the command/tool call needed to continue.
 
 The server should support stdio first because it is straightforward for local AI agents and keeps tokens local. An HTTP transport is deferred until a concrete deployment need exists.
 
@@ -553,10 +709,12 @@ The repository should include CI for these checks and a smoke test that runs the
 ### Phase 1 — One-shot repository analysis
 
 - implement authenticated GitHub client;
+- implement workload estimation, explicit budgets, and `--window auto`;
 - fetch repository metadata;
 - fetch PRs and reviews for a 90-day creation cohort;
 - implement activity, contributor, review, merge, and on-ramp metrics;
 - emit canonical JSON and human output;
+- emit progress events and clear throttling/partial-data messages;
 - surface limitations and sample sizes.
 
 **Exit criterion:** analysis of a real public repository produces a report whose metrics can be manually reconciled against GitHub API fixtures.
@@ -564,9 +722,11 @@ The repository should include CI for these checks and a smoke test that runs the
 ### Phase 2 — Local historical snapshots
 
 - implement SQLite migrations;
+- persist analysis jobs and checkpoints;
 - save/load snapshots;
 - implement incremental refresh;
 - implement compare, list, export, import, and prune;
+- resume interrupted large-repository analyses;
 - document persistence behavior in local, Docker, and ephemeral environments.
 
 **Exit criterion:** two analyses produce a meaningful comparison without requiring a hosted database.
@@ -575,6 +735,7 @@ The repository should include CI for these checks and a smoke test that runs the
 
 - add JSONL if useful for batch agents;
 - implement stdio MCP server;
+- implement MCP progress notifications and resumable job status;
 - publish TypeScript API and report schema;
 - add examples for Codex, Claude-style MCP clients, and shell agents without coupling to one vendor.
 
@@ -601,7 +762,7 @@ Only pursue this after usage demonstrates demand for:
 - scheduled repository monitoring;
 - cross-repository comparisons.
 
-Hosted mode must be opt-in, separately documented, and must not make local mode less private or less capable.
+Hosted mode should use Postgres or another appropriate server SQL database, not a shared SQLite file. It must define ingestion, deduplication, authentication, rate limits, moderation/correction, retention, and deletion policies. It must be opt-in, separately documented, and must not make local mode less private or less capable.
 
 ## 17. Risks and mitigations
 
@@ -644,15 +805,19 @@ These are the few choices that materially affect the first implementation:
 5. Whether the default output includes a recommendation narrative or only evidence and signals.
 6. Whether `--strict` should return exit code 3 for any missing metric or only material missing data.
 7. Whether the first release includes MCP or follows CLI/package stabilization.
+8. Default execution budget when the host provides no timeout.
+9. Whether auto mode should return a partial report below 30 days or fail with a resumable job.
 
 Recommended defaults:
 
 - Node 22 LTS or newer;
-- global user SQLite database by default;
+- global user SQLite database by default, with SQL as durable state and JSON as result/interchange format;
 - raw payloads off by default, normalized observations on;
 - evidence-first output with no LLM dependency;
 - stdio MCP included after the core JSON contract is stable;
-- 90 days as the default, configurable window supported from the beginning.
+- `auto` window selection by default, preferring 90 days and falling back to 30 days when budget requires it;
+- resumable SQLite jobs for work that cannot complete in one invocation;
+- Postgres for a future shared public database, never a shared SQLite file.
 
 ## 19. Definition of done for v1
 
@@ -660,14 +825,17 @@ The v1 release is complete when:
 
 - `npx oss-eval analyze owner/repo --format json` works with a user token;
 - no token is stored or sent anywhere except GitHub;
-- SQLite snapshots and JSON export/import work;
+- SQLite is the default durable store and JSON is the result/export/interchange format;
+- SQLite snapshots, job checkpoints, and JSON export/import work;
+- `auto`, explicit 30-day, and explicit 90-day windows are distinguishable in reports;
+- large-repository work communicates progress, throttling, budget use, and resumability;
 - the report schema is published and validated;
 - metrics have explicit definitions and sample sizes;
 - incomplete permissions and rate limits appear in `limitations`;
 - median/p75 review and merge timing is reported where samples exist;
 - “observed maintainers” is not misrepresented as exact write access;
 - CLI JSON, programmatic API, and MCP return the same report model;
+- MCP can run locally over stdio and expose progress or resumable status for long analyses;
 - fixture-backed CI passes without network access;
 - documentation explains persistence and privacy clearly;
 - both npm names have an intentional package strategy rather than placeholder content.
-
