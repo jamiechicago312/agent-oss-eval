@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate tracked documentation
+        run: |
+          test -s README.md
+          test -s PLAN.md
+
+      - name: Check committed whitespace errors
+        run: git diff --check "$(git rev-list --max-parents=0 HEAD)" HEAD
