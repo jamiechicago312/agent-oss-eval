@@ -53,6 +53,8 @@ export {
   planAnalysis,
   DEFAULT_EXECUTION_BUDGET
 } from "./core/planning.js";
+export { calculateActivityMetrics } from "./core/metrics/index.js";
+export type { ActivityMetricInput, ActivityMetricResult } from "./core/metrics/index.js";
 export type {
   AnalysisPlan,
   BudgetSnapshot,
