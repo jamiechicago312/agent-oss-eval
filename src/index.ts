@@ -1,6 +1,16 @@
 export { runCli } from "./cli/commands.js";
 export type { CliOptions, CliWriter } from "./cli/commands.js";
 export { TOOL_NAME, TOOL_VERSION } from "./core/version.js";
+export { FixtureProvider, collectPages } from "./github/fixture-provider.js";
+export { getFixture, fixtureScenarios } from "./github/fixtures.js";
+export type {
+  FixtureScenario,
+  GitHubProvider,
+  Page,
+  PullRequestFixture,
+  RepositoryFixture,
+  ReviewFixture
+} from "./github/types.js";
 export {
   createConfig,
   parseIsoTimestamp,
