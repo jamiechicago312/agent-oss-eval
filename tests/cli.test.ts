@@ -29,11 +29,11 @@ describe("oss-eval CLI foundation", () => {
   });
 
   it("rejects unknown commands", () => {
-    const result = captureCli(["analyze"]);
+    const result = captureCli(["unknown"]);
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toEqual([
-      "Unknown command: analyze",
+      "Unknown command: unknown",
       "Run 'oss-eval help' for usage."
     ]);
   });

@@ -1,32 +1,6 @@
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import type { Report } from "../../src/core/types.js";
-
-interface AjvInstance {
-  compile(schema: unknown): (data: unknown) => boolean;
-}
-
-type AjvConstructor = new (options?: { strict?: boolean }) => AjvInstance;
-
-const require = createRequire(import.meta.url);
-function resolveAjv(module: unknown): AjvConstructor {
-  if (typeof module === "function") return module as AjvConstructor;
-  if (typeof module === "object" && module !== null) {
-    const exports = module as Record<string, unknown>;
-    for (const candidate of [exports.default, exports.Ajv]) {
-      if (typeof candidate === "function") return candidate as AjvConstructor;
-    }
-  }
-  throw new Error("Unable to load the Ajv constructor");
-}
-
-const Ajv = resolveAjv(require("ajv"));
-
-const schema = JSON.parse(
-  readFileSync(new URL("../../schema/report.schema.json", import.meta.url), "utf8")
-);
-const validate = new Ajv({ strict: false }).compile(schema);
+import { validateReport } from "./schema-validator.js";
 
 const report: Report = {
   schema_version: 1,
@@ -60,18 +34,18 @@ const report: Report = {
 
 describe("report schema", () => {
   it("accepts a complete evidence report", () => {
-    expect(validate(report)).toBe(true);
+    expect(validateReport(report)).toBe(true);
   });
 
   it("rejects a report with a missing required field", () => {
     const invalid = { ...report, completeness: undefined };
 
-    expect(validate(invalid)).toBe(false);
+    expect(validateReport(invalid)).toBe(false);
   });
 
   it("rejects an unknown completeness value", () => {
     const invalid = { ...report, completeness: "unknown" };
 
-    expect(validate(invalid)).toBe(false);
+    expect(validateReport(invalid)).toBe(false);
   });
 });
