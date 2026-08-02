@@ -22,4 +22,21 @@ describe("canonical analyzer", () => {
     expect(report.comparison).toBeNull();
     expect(report.completeness).toBe("partial");
   });
+
+  it("marks review metrics partial when review enrichment fails", async () => {
+    const report = await analyzeRepository({
+      config: createConfig("fixture-owner/fixture-repo", { window: "90d", save: false }),
+      provider: new FixtureProvider(smallRepositoryFixture, {
+        failures: [{ operation: "listReviews", error: new Error("acquisition page budget exceeded") }]
+      }),
+      generatedAt: "2026-08-02T00:00:00Z"
+    });
+
+    expect(report.metrics.review_coverage!.confidence).toBe("partial");
+    expect(report.metrics.time_to_first_human_review!.confidence).toBe("partial");
+    expect(report.metrics.merge_rate!.confidence).toBe("measured");
+    expect(report.limitations).toContain(
+      "90d pull-request window fully collected (2 PRs); review/comment/event enrichment is partial because the acquisition budget was reached."
+    );
+  });
 });

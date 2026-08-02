@@ -167,6 +167,13 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   }));
   onboarding = onboardingItems[0] ?? null;
 
+  const detailFailures = failedStages.filter((name) => /^(reviews|comments|events):/.test(name));
+  if (detailFailures.length > 0 && stages.pullRequests?.status === "fetched") {
+    const days = Math.round((end - start) / 86_400_000);
+    limitations.push(
+      `${days}d pull-request window fully collected (${pullRequests.length} PRs); review/comment/event enrichment is partial because the acquisition budget was reached.`
+    );
+  }
   return finish(repository, pullRequests, reviews, comments, events, permissions, onboarding, rateLimit, networkRequests, stages, limitations, failedStages);
 }
 
