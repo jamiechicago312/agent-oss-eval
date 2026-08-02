@@ -55,6 +55,8 @@ export {
 } from "./core/planning.js";
 export { calculateActivityMetrics } from "./core/metrics/index.js";
 export type { ActivityMetricInput, ActivityMetricResult } from "./core/metrics/index.js";
+export { calculateExperienceMetrics } from "./core/metrics/index.js";
+export type { ExperienceMetricInput, ExperienceMetricResult } from "./core/metrics/index.js";
 export type {
   AnalysisPlan,
   BudgetSnapshot,
