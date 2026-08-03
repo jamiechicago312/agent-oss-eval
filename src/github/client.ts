@@ -117,6 +117,7 @@ function unixSecondsToIso(seconds: number): string {
 }
 
 export class GitHubClient implements GitHubProvider {
+  readonly pullRequestOrder = "created_desc" as const;
   private readonly baseUrl: string;
   private readonly fetcher: typeof globalThis.fetch;
   private readonly maxRetries: number;

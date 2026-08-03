@@ -18,14 +18,17 @@ import type {
 export interface FixtureProviderOptions {
   pageSize?: number;
   failures?: FixtureFailure[];
+  pullRequestOrder?: "created_desc" | "unspecified";
 }
 
 export class FixtureProvider implements GitHubProvider {
   readonly requests: FixtureOperation[] = [];
+  readonly pullRequestOrder: "created_desc" | "unspecified";
   private readonly pageSize: number;
   private readonly remainingFailures: Array<FixtureFailure & { remaining: number }>;
 
   constructor(private readonly scenario: FixtureScenario, options: FixtureProviderOptions = {}) {
+    this.pullRequestOrder = options.pullRequestOrder ?? "unspecified";
     this.pageSize = options.pageSize ?? 2;
     if (!Number.isInteger(this.pageSize) || this.pageSize < 1) {
       throw new Error("Fixture page size must be a positive integer");

@@ -3,6 +3,19 @@
   "version": "0.1.0",
   "description": "Headless, agent-first GitHub repository evaluation tool",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp/server.d.ts",
+      "import": "./dist/mcp/server.js"
+    },
+    "./schema/report.json": "./schema/report.schema.json"
+  },
   "bin": {
     "oss-eval": "dist/cli/index.js"
   },
@@ -15,11 +28,22 @@
   "engines": {
     "node": ">=22.0.0"
   },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jamiechicago312/agent-oss-eval.git"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "package:smoke": "npm run build && node tests/package-smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
@@ -30,5 +54,9 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vitest": "^3.2.4"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.76"
   }
 }

@@ -3,6 +3,7 @@ import { acquireRepositoryData } from "../../src/core/acquisition.js";
 import { PermissionError } from "../../src/core/errors.js";
 import { FixtureProvider } from "../../src/github/fixture-provider.js";
 import { emptyRepositoryFixture, smallRepositoryFixture } from "../../src/github/fixtures.js";
+import type { FixtureScenario } from "../../src/github/types.js";
 
 const window = {
   windowStart: "2026-06-01T00:00:00Z",
@@ -79,5 +80,29 @@ describe("repository acquisition", () => {
     expect(Object.values(result.provenance.stages).some((stage) => stage.status === "skipped_budget")).toBe(true);
     expect(result.limitations.filter((limitation) => limitation.includes("configured 5-request limit"))).toHaveLength(1);
     expect(result.limitations.some((limitation) => limitation.includes("reviews:2 failed"))).toBe(false);
+  });
+
+  it("stops descending PR pagination at the requested window boundary", async () => {
+    const oldPullRequest = { ...smallRepositoryFixture.pullRequests[0]!, id: 9999, number: 99,
+      createdAt: "2026-05-31T23:59:59Z", updatedAt: "2026-05-31T23:59:59Z" };
+    const scenario: FixtureScenario = { ...smallRepositoryFixture,
+      pullRequests: [smallRepositoryFixture.pullRequests[1]!, smallRepositoryFixture.pullRequests[0]!, oldPullRequest,
+        { ...oldPullRequest, id: 9998, number: 98, createdAt: "2025-01-01T00:00:00Z" }] };
+    const provider = new FixtureProvider(scenario, { pageSize: 2, pullRequestOrder: "created_desc" });
+    const result = await acquireRepositoryData({ provider, repository: scenario.repository.ref, ...window });
+    expect(result.pullRequests.map((pullRequest) => pullRequest.number)).toEqual([2, 1]);
+    expect(provider.requests.filter((request) => request === "listPullRequests")).toHaveLength(2);
+    expect(result.provenance.stages.pullRequests).toMatchObject({ pages: 2, stoppedAtWindowBoundary: true });
+  });
+
+  it("does not assume cutoff ordering for providers without that contract", async () => {
+    const oldPullRequest = { ...smallRepositoryFixture.pullRequests[0]!, id: 9999, number: 99,
+      createdAt: "2025-01-01T00:00:00Z", updatedAt: "2025-01-01T00:00:00Z" };
+    const scenario: FixtureScenario = { ...smallRepositoryFixture,
+      pullRequests: [oldPullRequest, smallRepositoryFixture.pullRequests[1]!] };
+    const provider = new FixtureProvider(scenario, { pageSize: 1 });
+    const result = await acquireRepositoryData({ provider, repository: scenario.repository.ref, ...window });
+    expect(result.pullRequests.map((pullRequest) => pullRequest.number)).toEqual([2]);
+    expect(provider.requests.filter((request) => request === "listPullRequests")).toHaveLength(2);
   });
 });

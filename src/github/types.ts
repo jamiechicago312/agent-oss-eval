@@ -114,6 +114,8 @@ export interface FixtureFailure {
 }
 
 export interface GitHubProvider {
+  /** Declares the pagination ordering contract used for safe window cutoffs. */
+  readonly pullRequestOrder?: "created_desc" | "unspecified";
   getRepository(ref: RepositoryRef): Promise<RepositoryFixture>;
   listPullRequests(ref: RepositoryRef, page: number): Promise<Page<PullRequestFixture>>;
   listReviews(ref: RepositoryRef, page: number, pullRequestNumber?: number): Promise<Page<ReviewFixture>>;

@@ -25,6 +25,7 @@ export interface AcquisitionStage {
   pages: number;
   items: number;
   error?: string;
+  stoppedAtWindowBoundary?: boolean;
 }
 
 class AcquisitionBudgetExceeded extends Error {
@@ -85,7 +86,7 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
     return action();
   };
 
-  const stage = async <T>(name: string, action: () => Promise<{ pages: number; items: T[] }>): Promise<T[]> => {
+  const stage = async <T>(name: string, action: () => Promise<{ pages: number; items: T[]; stoppedAtWindowBoundary?: boolean }>): Promise<T[]> => {
     if (budgetExhausted) {
       stages[name] = { status: "skipped_budget", pages: 0, items: 0 };
       failedStages.push(name);
@@ -93,7 +94,8 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
     }
     try {
       const result = await action();
-      stages[name] = { status: "fetched", pages: result.pages, items: result.items.length };
+      stages[name] = { status: "fetched", pages: result.pages, items: result.items.length,
+        ...(result.stoppedAtWindowBoundary === undefined ? {} : { stoppedAtWindowBoundary: result.stoppedAtWindowBoundary }) };
       return result.items;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown acquisition failure";
@@ -130,11 +132,19 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   const collectedPullRequests = await stage("pullRequests", async () => {
     const items: PullRequestFixture[] = [];
     let page = 1;
+    let stoppedAtWindowBoundary = false;
     while (true) {
       assertNotCancelled(options.signal);
       const response = await request(() => options.provider.listPullRequests(options.repository, page));
       items.push(...response.items.filter((pullRequest) => isWithinWindow(pullRequest.createdAt, start, end)));
-      if (!response.hasNext) return { pages: page, items };
+      const oldest = response.items.at(-1);
+      const reachedWindowBoundary = options.provider.pullRequestOrder === "created_desc" && oldest !== undefined &&
+        Date.parse(oldest.createdAt) < start;
+      if (reachedWindowBoundary) stoppedAtWindowBoundary = true;
+      if (!response.hasNext || reachedWindowBoundary) {
+        // The provider guarantees every later page is older, so fetching more cannot add in-window PRs.
+        return { pages: page, items, ...(stoppedAtWindowBoundary ? { stoppedAtWindowBoundary: true } : {}) };
+      }
       page += 1;
     }
   });

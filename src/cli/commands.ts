@@ -22,6 +22,11 @@ export interface CliOptions {
 }
 
 export async function runCliAsync(argv: readonly string[], options: CliOptions = {}): Promise<number> {
+  if (argv[0] === "mcp") {
+    const { startStdioMcpServer } = await import("../mcp/server.js");
+    await startStdioMcpServer();
+    return 0;
+  }
   if (argv[0] === "analyze") {
     return runLiveAnalysis(argv.slice(1), options.stdout ?? console.log, options.stderr ?? console.error);
   }
@@ -61,7 +66,7 @@ export function runCli(argv: readonly string[], options: CliOptions = {}): numbe
 
   if (command === "help" || command === "--help" || command === "-h" || command === undefined) {
     stdout(`Usage: ${TOOL_NAME} <command>`);
-    stdout("\nCommands:\n  version  Print the tool version");
+    stdout("\nCommands:\n  version  Print the tool version\n  mcp      Start the local stdio MCP server");
     return 0;
   }
 
