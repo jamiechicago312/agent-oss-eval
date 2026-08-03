@@ -105,4 +105,27 @@ describe("GitHub client", () => {
     controller.abort();
     await expect(github.getRateLimit()).rejects.toMatchObject({ name: "AbortError" });
   });
+
+  it("revalidates cached responses with ETags without exposing credentials", async () => {
+    const cache = new Map(); let calls = 0; let conditional = "";
+    const github = new GitHubClient({ token: "ghp_private", env: {}, githubCliToken: () => null, cache,
+      fetch: async (_input, init) => {
+        calls += 1; conditional = new Headers(init?.headers).get("if-none-match") ?? "";
+        if (calls === 2) return new Response(null, { status: 304, headers: { etag: "v1" } });
+        return response({ rate: { remaining: 10, limit: 20, reset: 1_800_000_000 } }, 200, { etag: "v1" });
+      } });
+    await expect(github.getRateLimit()).resolves.toMatchObject({ remaining: 10 });
+    await expect(github.getRateLimit()).resolves.toMatchObject({ remaining: 10 });
+    expect(conditional).toBe("v1");
+    expect(JSON.stringify([...cache.values()])).not.toContain("ghp_private");
+  });
+
+  it("bounds a request with an explicit timeout", async () => {
+    const github = new GitHubClient({ token: "test", env: {}, githubCliToken: () => null, timeoutMs: 1,
+      fetch: async (_input, init) => new Promise((_resolve, reject) => {
+        if (init?.signal?.aborted) { reject(init.signal.reason); return; }
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      }) });
+    await expect(github.getRateLimit()).rejects.toMatchObject({ name: "TimeoutError" });
+  });
 });

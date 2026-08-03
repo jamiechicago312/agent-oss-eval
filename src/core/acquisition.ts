@@ -10,6 +10,7 @@ import type {
   RepositoryFixture,
   ReviewFixture
 } from "../github/types.js";
+import { CancellationError } from "./errors.js";
 
 export interface AcquisitionOptions {
   provider: GitHubProvider;
@@ -98,6 +99,7 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
         ...(result.stoppedAtWindowBoundary === undefined ? {} : { stoppedAtWindowBoundary: result.stoppedAtWindowBoundary }) };
       return result.items;
     } catch (error) {
+      if (options.signal?.aborted || (error instanceof Error && error.name === "AbortError")) throw new CancellationError();
       const message = error instanceof Error ? error.message : "Unknown acquisition failure";
       const exhausted = error instanceof AcquisitionBudgetExceeded;
       if (exhausted) budgetExhausted = true;
@@ -228,7 +230,7 @@ async function collectPullRequestPages<T>(
 }
 
 function assertNotCancelled(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new Error("Acquisition cancelled");
+  if (signal?.aborted) throw new CancellationError();
 }
 
 function finish(

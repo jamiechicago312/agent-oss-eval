@@ -58,7 +58,7 @@ export function runCli(argv: readonly string[], options: CliOptions = {}): numbe
     stdout(`Node.js: ${process.versions.node}`);
     const status = authStatus();
     stdout(`GitHub authentication: ${status.authenticated ? "available" : "not configured"} (${status.source})`);
-    stdout("SQLite: configured for local persistence in a later phase");
+    stdout(`SQLite: ${resolveDatabasePath()} (local persistence enabled)`);
     return 0;
   }
 

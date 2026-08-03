@@ -2,12 +2,13 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
 
 const directory = mkdtempSync(join(tmpdir(), "oss-eval-package-"));
 const packOutput = execFileSync("npm", ["pack", "--pack-destination", directory, "--json"], { encoding: "utf8" });
 const [{ filename, files }] = JSON.parse(packOutput);
 const paths = files.map((file) => file.path);
-for (const required of ["dist/index.js", "dist/index.d.ts", "dist/cli/index.js", "dist/mcp/server.js", "schema/report.schema.json"]) {
+for (const required of ["dist/index.js", "dist/index.d.ts", "dist/cli/index.js", "dist/mcp/server.js", "schema/report.schema.json", "CHANGELOG.md", "docs/release-checklist.md"]) {
   if (!paths.includes(required)) throw new Error(`Packed artifact is missing ${required}`);
 }
 if (paths.some((path) => /(?:^|\/)(?:\.env|history\.sqlite3|raw)(?:$|\/)/.test(path))) throw new Error("Packed artifact contains private or raw data");
@@ -24,3 +25,9 @@ const schema = JSON.parse(readFileSync(join(consumer, "node_modules", "oss-eval"
 if (schema.title !== "oss-eval report") throw new Error("Report schema is invalid or missing");
 const version = execFileSync(join(consumer, "node_modules", ".bin", "oss-eval"), ["version"], { encoding: "utf8" }).trim();
 if (version !== "oss-eval 0.1.0") throw new Error(`Packed CLI failed: ${version}`);
+const executable = join(consumer, "node_modules", ".bin", "oss-eval");
+const environment = { ...process.env, OSS_EVAL_DB: join(directory, "smoke.sqlite3"), GITHUB_TOKEN: "", GH_TOKEN: "" };
+for (const args of [["auth", "status"], ["doctor"], ["analyze", "fixture-owner/fixture-repo", "--fixture", "small", "--format", "json", "--no-save"],
+  ["snapshots", "list", "fixture-owner/fixture-repo"]]) {
+  execFileSync(executable, args, { encoding: "utf8", env: environment });
+}

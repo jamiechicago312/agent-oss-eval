@@ -4,6 +4,16 @@ Headless, agent-first CLI and npm package for evaluating GitHub projects for
 contributor fit. The stable output will be deterministic JSON; MCP and human
 output will use the same core engine.
 
+Install and run the primary package with:
+
+```bash
+npx oss-eval analyze owner/repo --window 30d --format json
+```
+
+Authentication is resolved from an explicit programmatic token, `GITHUB_TOKEN`,
+`GH_TOKEN`, or the authenticated GitHub CLI. Tokens are never accepted as CLI
+arguments.
+
 ## Status
 
 The current release can analyze public GitHub repositories, emit human, JSON,
@@ -26,12 +36,23 @@ npm run build
 node dist/cli/index.js version
 ```
 
+All automated tests use deterministic fixtures and require neither network
+access nor a GitHub token. CI blocks merges when lint, typecheck, tests, build,
+CLI verification, or the packed-package smoke test fails.
+
 SQLite uses Node.js 22's built-in driver behind a storage interface. The default
 database is `$XDG_DATA_HOME/oss-eval/history.sqlite3` (or
 `~/.local/share/oss-eval/history.sqlite3`). Override it with `--db`,
 `OSS_EVAL_DB`, or the programmatic storage interface. Raw acquisition payloads
 are stored only with `--include-raw`. GitHub analysis uses the authenticated
 GitHub CLI credential when available.
+
+Local reports may contain public GitHub metadata and contributor usernames.
+GitHub tokens and Authorization headers are never stored in reports, cache keys,
+SQLite fields, MCP messages, or diagnostics. Raw acquisition payloads are opt-in;
+inspect them before export. Use `snapshots prune` for retained history, or remove
+the local database file to delete all history. In Docker, mount the database path
+as a volume if history must survive container replacement.
 
 ## Analysis
 
@@ -54,6 +75,11 @@ node dist/cli/index.js analyze owner/repo \
 
 If the cap is reached, the report identifies the affected metrics and tells
 you which limit to raise.
+
+`--dry-run` prints a bounded work plan without contacting GitHub. Conditional
+ETag revalidation is used within a client session unless `--no-cache` is set.
+Partial reports distinguish measured, cached, unavailable, and incomplete data;
+small samples are limitations rather than strong conclusions.
 
 Use `--format jsonl` for one structured progress event per line followed by a
 final `report` event. Human progress is written to stderr; `--quiet --format
@@ -117,3 +143,17 @@ does not proxy credentials through a hosted service.
 The `agent-oss-eval` compatibility name is intentionally not published yet; see
 [`docs/compatibility-alias.md`](docs/compatibility-alias.md) for the forwarding
 and deprecation policy.
+
+Release compatibility, migration rules, and the maintainer checklist are in
+[`docs/versioning-and-migrations.md`](docs/versioning-and-migrations.md),
+[`docs/release-checklist.md`](docs/release-checklist.md), and `CHANGELOG.md`.
+
+## Exit codes
+
+- `0`: command succeeded; a non-strict analysis may still contain disclosed limitations.
+- `1`: analysis or operational failure.
+- `2`: invalid command or input.
+- `3`: material limitations when `--strict` is enabled.
+
+Human progress and actionable errors are written to stderr. JSON stdout remains
+stable and `--quiet --format json` emits exactly one canonical report document.
