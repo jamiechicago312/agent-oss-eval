@@ -11,6 +11,7 @@ import type {
   SnapshotSummary,
   StoredSnapshot
 } from "./types.js";
+import type { AnalysisJob } from "./types.js";
 
 const MIGRATIONS = [{
   version: 1,
@@ -48,6 +49,27 @@ const MIGRATIONS = [{
     );
     CREATE INDEX snapshots_repository_generated_idx ON snapshots(repository_id, generated_at DESC);
     CREATE INDEX observations_snapshot_idx ON observations(snapshot_id);
+  `
+}, {
+  version: 2,
+  sql: `
+    CREATE TABLE analysis_jobs (
+      id TEXT PRIMARY KEY,
+      repository TEXT NOT NULL,
+      requested_window TEXT NOT NULL,
+      selected_window TEXT NOT NULL,
+      plan_version INTEGER NOT NULL,
+      phase TEXT NOT NULL,
+      status TEXT NOT NULL,
+      completed_items INTEGER NOT NULL,
+      total_items INTEGER NOT NULL,
+      requests_used INTEGER NOT NULL,
+      pages_used INTEGER NOT NULL,
+      checkpoint_at TEXT NOT NULL,
+      reason TEXT,
+      payload_json TEXT NOT NULL
+    );
+    CREATE INDEX analysis_jobs_repository_status_idx ON analysis_jobs(repository, status, checkpoint_at DESC);
   `
 }];
 
@@ -193,6 +215,33 @@ export class SqliteSnapshotStore implements SnapshotStore {
   }
 
   close(): void { this.db.close(); }
+
+  createJob(job: AnalysisJob): void {
+    this.db.prepare(`INSERT INTO analysis_jobs(id, repository, requested_window, selected_window, plan_version,
+      phase, status, completed_items, total_items, requests_used, pages_used, checkpoint_at, reason, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(job.id, job.repository, job.requestedWindow, job.selectedWindow, job.planVersion, job.phase, job.status,
+        job.completedItems, job.totalItems, job.requestsUsed, job.pagesUsed, job.checkpointAt, job.reason, JSON.stringify(job.payload));
+  }
+
+  getJob<T = JsonValue>(id: string): AnalysisJob<T> | null {
+    const row = this.db.prepare("SELECT * FROM analysis_jobs WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    if (row === undefined) return null;
+    return { id: String(row.id), repository: String(row.repository), requestedWindow: String(row.requested_window),
+      selectedWindow: String(row.selected_window), planVersion: Number(row.plan_version), phase: String(row.phase),
+      status: String(row.status) as AnalysisJob<T>["status"], completedItems: Number(row.completed_items),
+      totalItems: Number(row.total_items), requestsUsed: Number(row.requests_used), pagesUsed: Number(row.pages_used),
+      checkpointAt: String(row.checkpoint_at), reason: row.reason === null ? null : String(row.reason),
+      payload: parseJson<T>(String(row.payload_json)) };
+  }
+
+  updateJob(job: AnalysisJob): void {
+    const result = this.db.prepare(`UPDATE analysis_jobs SET phase=?, status=?, completed_items=?, total_items=?,
+      requests_used=?, pages_used=?, checkpoint_at=?, reason=?, payload_json=? WHERE id=?`)
+      .run(job.phase, job.status, job.completedItems, job.totalItems, job.requestsUsed, job.pagesUsed,
+        job.checkpointAt, job.reason, JSON.stringify(job.payload), job.id);
+    if (result.changes === 0) throw new InvalidInputError(`Analysis job not found: ${job.id}`);
+  }
 
   private transaction(operation: () => void): void {
     this.db.exec("BEGIN IMMEDIATE");

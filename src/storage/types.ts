@@ -50,3 +50,28 @@ export interface SnapshotStore {
   prune(options: PruneOptions): { removed: number };
   close(): void;
 }
+
+export type AnalysisJobStatus = "planned" | "running" | "paused" | "cancelled" | "completed" | "failed";
+
+export interface AnalysisJob<T = JsonValue> {
+  id: string;
+  repository: string;
+  requestedWindow: string;
+  selectedWindow: string;
+  planVersion: number;
+  phase: string;
+  status: AnalysisJobStatus;
+  completedItems: number;
+  totalItems: number;
+  requestsUsed: number;
+  pagesUsed: number;
+  checkpointAt: string;
+  reason: string | null;
+  payload: T;
+}
+
+export interface AnalysisJobStore {
+  createJob(job: AnalysisJob): void;
+  getJob<T = JsonValue>(id: string): AnalysisJob<T> | null;
+  updateJob(job: AnalysisJob): void;
+}
