@@ -7,6 +7,11 @@ import { analyzeRepository } from "../core/analyzer.js";
 import { createConfig, parseOutputFormat, parseRepository } from "../core/config.js";
 import { formatHumanReport } from "../output/human.js";
 import { TOOL_NAME, TOOL_VERSION } from "../core/version.js";
+import { readFileSync, writeFileSync } from "node:fs";
+import { compareReports } from "../core/comparison.js";
+import { SqliteSnapshotStore } from "../storage/sqlite.js";
+import { resolveDatabasePath } from "../storage/path.js";
+import type { SnapshotExport, SnapshotSummary } from "../storage/types.js";
 
 export type CliWriter = (message: string) => void;
 
@@ -19,6 +24,7 @@ export async function runCliAsync(argv: readonly string[], options: CliOptions =
   if (argv[0] === "analyze") {
     return runLiveAnalysis(argv.slice(1), options.stdout ?? console.log, options.stderr ?? console.error);
   }
+  if (argv[0] === "compare" || argv[0] === "snapshots") return runHistoryCommand(argv, options);
   return runCli(argv, options);
 }
 
@@ -50,6 +56,8 @@ export function runCli(argv: readonly string[], options: CliOptions = {}): numbe
     return 0;
   }
 
+  if (command === "compare" || command === "snapshots") return runHistoryCommand(argv, options);
+
   if (command === "help" || command === "--help" || command === "-h" || command === undefined) {
     stdout(`Usage: ${TOOL_NAME} <command>`);
     stdout("\nCommands:\n  version  Print the tool version");
@@ -59,6 +67,79 @@ export function runCli(argv: readonly string[], options: CliOptions = {}): numbe
   stderr(`Unknown command: ${command}`);
   stderr(`Run '${TOOL_NAME} help' for usage.`);
   return 2;
+}
+
+function flagValue(args: readonly string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index < 0 ? undefined : args[index + 1];
+}
+
+function requireValue(value: string | undefined, message: string): string {
+  if (value === undefined) throw new InvalidInputError(message);
+  return value;
+}
+
+function findAgainst(summaries: SnapshotSummary[], selector: string): SnapshotSummary | undefined {
+  if (selector === "previous") return summaries[1];
+  const exact = summaries.find((summary) => summary.id === selector);
+  if (exact !== undefined) return exact;
+  const timestamp = Date.parse(selector);
+  return Number.isNaN(timestamp) ? undefined : summaries.find((summary) => Date.parse(summary.generatedAt) <= timestamp);
+}
+
+function runHistoryCommand(argv: readonly string[], options: CliOptions): number {
+  const stdout = options.stdout ?? console.log;
+  const stderr = options.stderr ?? console.error;
+  const dbPath = resolveDatabasePath(flagValue(argv, "--db"));
+  let store: SqliteSnapshotStore | undefined;
+  try {
+    store = new SqliteSnapshotStore(dbPath);
+    if (argv[0] === "compare") {
+      const repository = requireValue(argv[1], "Compare requires a repository in owner/repo format");
+      parseRepository(repository);
+      const selector = flagValue(argv, "--against") ?? "previous";
+      const summaries = store.list(repository);
+      const current = summaries[0];
+      const against = findAgainst(summaries, selector);
+      if (current === undefined || against === undefined || current.id === against.id) throw new InvalidInputError(`No comparison snapshot found for ${selector}`);
+      const comparison = compareReports(store.get(against.id)!.report, store.get(current.id)!.report);
+      if ((flagValue(argv, "--format") ?? "human") === "json") stdout(JSON.stringify(comparison));
+      else if (!comparison.compatible) stdout(`${repository}: incomparable — ${comparison.reason}`);
+      else {
+        stdout(`${repository}: ${comparison.changes.length} metric change(s)`);
+        for (const change of comparison.changes) stdout(`${change.metric}: ${JSON.stringify(change.before)} -> ${JSON.stringify(change.after)}${change.percentageChange === null ? "" : ` (${change.percentageChange}%)`}`);
+      }
+      return comparison.compatible ? 0 : 3;
+    }
+    const action = argv[1];
+    if (action === "list") {
+      const repository = requireValue(argv[2], "Snapshots list requires a repository");
+      for (const summary of store.list(repository)) stdout(`${summary.id}\t${summary.generatedAt}\t${summary.completeness}`);
+    } else if (action === "show") {
+      const id = requireValue(argv[2], "Snapshots show requires a snapshot ID");
+      const snapshot = store.get(id);
+      if (snapshot === null) throw new InvalidInputError(`Snapshot not found: ${id}`);
+      stdout(JSON.stringify(snapshot.report));
+    } else if (action === "export") {
+      const repository = requireValue(argv[2], "Snapshots export requires a repository");
+      const output = requireValue(flagValue(argv, "--output"), "Snapshots export requires --output <file>");
+      writeFileSync(output, `${JSON.stringify(store.export(repository), null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+      stdout(`Exported snapshots for ${repository} to ${output}`);
+    } else if (action === "import") {
+      const input = requireValue(argv[2], "Snapshots import requires a file");
+      const result = store.import(JSON.parse(readFileSync(input, "utf8")) as SnapshotExport);
+      stdout(`Imported ${result.imported}; skipped ${result.skipped}`);
+    } else if (action === "prune") {
+      const repository = requireValue(argv[2], "Snapshots prune requires a repository");
+      const before = requireValue(flagValue(argv, "--before"), "Snapshots prune requires --before <timestamp>");
+      const result = store.prune({ repository, before });
+      stdout(`Removed ${result.removed} snapshot(s)`);
+    } else throw new InvalidInputError("Snapshots command must be list, show, export, import, or prune");
+    return 0;
+  } catch (error) {
+    stderr(error instanceof Error ? error.message : "Snapshot operation failed");
+    return error instanceof InvalidInputError ? 2 : 1;
+  } finally { store?.close(); }
 }
 
 async function runLiveAnalysis(args: readonly string[], stdout: CliWriter, stderr: CliWriter): Promise<number> {
