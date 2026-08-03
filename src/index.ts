@@ -1,6 +1,8 @@
 export { runCli } from "./cli/commands.js";
 export { runCliAsync } from "./cli/commands.js";
 export type { CliOptions, CliWriter } from "./cli/commands.js";
+export { createMcpServer, startStdioMcpServer } from "./mcp/server.js";
+export type { AnalyzeFunction, McpServerDependencies } from "./mcp/server.js";
 export { analyzeRepository } from "./core/analyzer.js";
 export type { AnalyzeOptions } from "./core/analyzer.js";
 export { TOOL_NAME, TOOL_VERSION } from "./core/version.js";
