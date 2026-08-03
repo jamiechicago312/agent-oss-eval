@@ -26,6 +26,10 @@ npm run build
 node dist/cli/index.js version
 ```
 
+All automated tests use deterministic fixtures and require neither network
+access nor a GitHub token. CI blocks merges when lint, typecheck, tests, build,
+CLI verification, or the packed-package smoke test fails.
+
 SQLite uses Node.js 22's built-in driver behind a storage interface. The default
 database is `$XDG_DATA_HOME/oss-eval/history.sqlite3` (or
 `~/.local/share/oss-eval/history.sqlite3`). Override it with `--db`,
@@ -129,3 +133,13 @@ does not proxy credentials through a hosted service.
 The `agent-oss-eval` compatibility name is intentionally not published yet; see
 [`docs/compatibility-alias.md`](docs/compatibility-alias.md) for the forwarding
 and deprecation policy.
+
+## Exit codes
+
+- `0`: command succeeded; a non-strict analysis may still contain disclosed limitations.
+- `1`: analysis or operational failure.
+- `2`: invalid command or input.
+- `3`: material limitations when `--strict` is enabled.
+
+Human progress and actionable errors are written to stderr. JSON stdout remains
+stable and `--quiet --format json` emits exactly one canonical report document.
