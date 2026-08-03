@@ -4,6 +4,16 @@ Headless, agent-first CLI and npm package for evaluating GitHub projects for
 contributor fit. The stable output will be deterministic JSON; MCP and human
 output will use the same core engine.
 
+Install and run the primary package with:
+
+```bash
+npx oss-eval analyze owner/repo --window 30d --format json
+```
+
+Authentication is resolved from an explicit programmatic token, `GITHUB_TOKEN`,
+`GH_TOKEN`, or the authenticated GitHub CLI. Tokens are never accepted as CLI
+arguments.
+
 ## Status
 
 The current release can analyze public GitHub repositories, emit human, JSON,
@@ -133,6 +143,10 @@ does not proxy credentials through a hosted service.
 The `agent-oss-eval` compatibility name is intentionally not published yet; see
 [`docs/compatibility-alias.md`](docs/compatibility-alias.md) for the forwarding
 and deprecation policy.
+
+Release compatibility, migration rules, and the maintainer checklist are in
+[`docs/versioning-and-migrations.md`](docs/versioning-and-migrations.md),
+[`docs/release-checklist.md`](docs/release-checklist.md), and `CHANGELOG.md`.
 
 ## Exit codes
 

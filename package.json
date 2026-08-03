@@ -22,6 +22,8 @@
   "files": [
     "dist",
     "schema",
+    "docs",
+    "CHANGELOG.md",
     "LICENSE",
     "README.md"
   ],
