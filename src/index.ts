@@ -77,3 +77,14 @@ export type {
   ReportCompleteness,
   ReportWindow
 } from "./core/types.js";
+export { SqliteSnapshotStore } from "./storage/sqlite.js";
+export { defaultDatabasePath, resolveDatabasePath } from "./storage/path.js";
+export type {
+  ObservationInput,
+  PruneOptions,
+  SaveSnapshotInput,
+  SnapshotExport,
+  SnapshotStore,
+  SnapshotSummary,
+  StoredSnapshot
+} from "./storage/types.js";

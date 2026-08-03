@@ -4,6 +4,7 @@ import { createConfig } from "../../src/core/config.js";
 import { FixtureProvider } from "../../src/github/fixture-provider.js";
 import { smallRepositoryFixture } from "../../src/github/fixtures.js";
 import { validateReport } from "../contract/schema-validator.js";
+import { SqliteSnapshotStore } from "../../src/storage/sqlite.js";
 
 describe("canonical analyzer", () => {
   it("connects planning, acquisition, and metrics into a schema-valid report", async () => {
@@ -38,5 +39,17 @@ describe("canonical analyzer", () => {
     expect(report.limitations).toContain(
       "90d pull-request window fully collected (2 PRs); review/comment/event enrichment is partial because it stopped at the 100-page acquisition limit; increase --max-pages to continue."
     );
+  });
+
+  it("persists through the storage interface while core tests can use an in-memory store", async () => {
+    const store = new SqliteSnapshotStore(":memory:");
+    const report = await analyzeRepository({
+      config: createConfig("fixture-owner/fixture-repo", { window: "30d", save: true }),
+      provider: new FixtureProvider(smallRepositoryFixture),
+      generatedAt: "2026-08-02T00:00:00Z",
+      store
+    });
+    expect(store.getLatest(report.target.full_name)?.report).toEqual(report);
+    store.close();
   });
 });
