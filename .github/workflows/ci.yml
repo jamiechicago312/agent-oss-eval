@@ -51,3 +51,6 @@ jobs:
 
       - name: Verify CLI
         run: test "$(node dist/cli/index.js version)" = "oss-eval 0.1.0"
+
+      - name: Verify packed package
+        run: npm run package:smoke

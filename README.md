@@ -78,3 +78,42 @@ and observations. Import is idempotent. Export refuses to overwrite an existing
 file, and prune removes only snapshots strictly older than the supplied boundary.
 Comparisons reject mismatched repositories, windows, or schema versions instead
 of presenting them as equivalent.
+
+## Programmatic API
+
+The supported Node API returns the same canonical report as CLI JSON. It accepts
+the same budgets plus progress, cancellation, provider, and storage overrides.
+
+```ts
+import { evaluateRepository } from "oss-eval";
+
+const controller = new AbortController();
+const report = await evaluateRepository("owner/repo", {
+  window: "30d",
+  maxApiRequests: 300,
+  budgetMs: 300_000,
+  signal: controller.signal,
+  progress: (event) => console.error(event.phase, event.completed, event.estimatedTotal)
+});
+```
+
+The versioned report schema is exported as `oss-eval/schema/report.json` and is
+included with TypeScript declarations in the package tarball.
+
+## MCP
+
+Start the local stdio server with `oss-eval mcp`. Generic MCP clients can call
+`evaluate_repository`, `get_analysis_status`, and `continue_analysis`. The server
+uses the caller's local GitHub credentials, filesystem, and SQLite database; it
+does not proxy credentials through a hosted service.
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "oss-eval", "mcp"]
+}
+```
+
+The `agent-oss-eval` compatibility name is intentionally not published yet; see
+[`docs/compatibility-alias.md`](docs/compatibility-alias.md) for the forwarding
+and deprecation policy.
