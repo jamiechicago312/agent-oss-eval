@@ -12,6 +12,7 @@ import { compareReports } from "../core/comparison.js";
 import { SqliteSnapshotStore } from "../storage/sqlite.js";
 import { resolveDatabasePath } from "../storage/path.js";
 import type { SnapshotExport, SnapshotSummary } from "../storage/types.js";
+import type { ProgressEvent } from "../core/planning.js";
 
 export type CliWriter = (message: string) => void;
 
@@ -147,8 +148,13 @@ async function runLiveAnalysis(args: readonly string[], stdout: CliWriter, stder
     const parsed = parseAnalyzeArgs(args);
     const fixture = parsed.fixture === undefined ? undefined : getFixture(parsed.fixture);
     if (parsed.fixture !== undefined && fixture === undefined) throw new InvalidInputError(`Unknown fixture: ${parsed.fixture}`);
+    const progress = (event: ProgressEvent) => {
+      if (parsed.format === "jsonl") stdout(JSON.stringify(event));
+      else if (parsed.format === "human" && parsed.input?.quiet !== true) stderr(`[${event.phase}] ${event.message} (${event.completed}/${event.estimatedTotal})`);
+    };
     const report = await analyzeRepository({
       config: createConfig(parsed.repository, parsed.input),
+      progress,
       ...(fixture === undefined ? {} : {
         provider: new FixtureProvider(fixture, parsed.fixture === "failed"
           ? { failures: [{ operation: "getRepository", error: new Error("fixture repository unavailable") }] }
@@ -157,6 +163,7 @@ async function runLiveAnalysis(args: readonly string[], stdout: CliWriter, stder
       ...(fixture === undefined ? {} : { generatedAt: "2026-08-02T00:00:00Z" })
     });
     if (parsed.format === "human") stdout(formatHumanReport(report));
+    else if (parsed.format === "jsonl") stdout(JSON.stringify({ type: "report", report }));
     else stdout(JSON.stringify(report));
     return parsed.input?.strict === true && report.completeness !== "complete" ? 3 : report.completeness === "failed" ? 1 : 0;
   } catch (error) {

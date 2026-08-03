@@ -6,8 +6,9 @@ output will use the same core engine.
 
 ## Status
 
-The current release can analyze public GitHub repositories and emit human or
-JSON reports. Storage and MCP are implemented in later issues.
+The current release can analyze public GitHub repositories, emit human, JSON,
+or JSONL reports, and retain private local history in SQLite. MCP is implemented
+in a later phase.
 
 ## Requirements
 
@@ -25,9 +26,12 @@ npm run build
 node dist/cli/index.js version
 ```
 
-SQLite will use `better-sqlite3` behind a storage interface. This foundation
-does not open a database yet. GitHub analysis uses the authenticated GitHub CLI
-credential when available.
+SQLite uses Node.js 22's built-in driver behind a storage interface. The default
+database is `$XDG_DATA_HOME/oss-eval/history.sqlite3` (or
+`~/.local/share/oss-eval/history.sqlite3`). Override it with `--db`,
+`OSS_EVAL_DB`, or the programmatic storage interface. Raw acquisition payloads
+are stored only with `--include-raw`. GitHub analysis uses the authenticated
+GitHub CLI credential when available.
 
 ## Analysis
 
@@ -50,3 +54,27 @@ node dist/cli/index.js analyze owner/repo \
 
 If the cap is reached, the report identifies the affected metrics and tells
 you which limit to raise.
+
+Use `--format jsonl` for one structured progress event per line followed by a
+final `report` event. Human progress is written to stderr; `--quiet --format
+json` writes only the final report to stdout.
+
+## Local history
+
+Analysis saves snapshots by default. Use `--no-save` for an ephemeral run.
+
+```bash
+oss-eval snapshots list owner/repo
+oss-eval snapshots show <snapshot-id>
+oss-eval compare owner/repo --against previous --format human
+oss-eval compare owner/repo --against <snapshot-id-or-timestamp> --format json
+oss-eval snapshots export owner/repo --output snapshots.json
+oss-eval snapshots import snapshots.json
+oss-eval snapshots prune owner/repo --before 2026-01-01T00:00:00Z
+```
+
+Export/import preserves reports, provenance, limitations, optional raw data,
+and observations. Import is idempotent. Export refuses to overwrite an existing
+file, and prune removes only snapshots strictly older than the supplied boundary.
+Comparisons reject mismatched repositories, windows, or schema versions instead
+of presenting them as equivalent.

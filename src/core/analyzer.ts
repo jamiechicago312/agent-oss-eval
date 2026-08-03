@@ -16,6 +16,7 @@ export interface AnalyzeOptions {
   generatedAt?: string;
   progress?: ProgressListener;
   store?: SnapshotStore;
+  signal?: AbortSignal;
 }
 
 const DEFAULT_ESTIMATE: WorkloadEstimate = {
@@ -108,8 +109,13 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     repository: options.config.repository,
     windowStart,
     windowEnd,
-    maxPages: plan.budget.maxPages
+    maxPages: plan.budget.maxPages,
+    ...(options.signal === undefined ? {} : { signal: options.signal })
   });
+  options.progress?.({ type: "progress", phase: "acquisition", message: "Repository data acquisition finished",
+    completed: acquisition.provenance.networkRequests, estimatedTotal: plan.estimate.pages,
+    requestsUsed: acquisition.provenance.networkRequests, rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null,
+    window: `${days}d`, resumable: plan.resumable });
   const activity = calculateActivityMetrics({
     pullRequests: acquisition.pullRequests,
     reviews: acquisition.reviews,
@@ -125,6 +131,9 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     { ...activity.metrics, ...experience.metrics },
     acquisition.failedStages
   );
+  options.progress?.({ type: "progress", phase: "metrics", message: "Repository metrics calculated",
+    completed: plan.estimate.pages, estimatedTotal: plan.estimate.pages, requestsUsed: acquisition.provenance.networkRequests,
+    rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null, window: `${days}d`, resumable: plan.resumable });
   const limitations = [
     ...acquisition.limitations,
     ...activity.limitations,
@@ -165,6 +174,9 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     try { store.save({ report, ...(options.config.includeRaw ? { raw: acquisition as unknown as JsonValue } : {}) }); }
     finally { if (ownedStore) store.close(); }
   }
+  options.progress?.({ type: "progress", phase: "complete", message: report.completeness === "complete" ? "Analysis complete" : "Analysis complete with limitations",
+    completed: plan.estimate.pages, estimatedTotal: plan.estimate.pages, requestsUsed: acquisition.provenance.networkRequests,
+    rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null, window: `${days}d`, resumable: plan.resumable });
   return report;
 }
 
