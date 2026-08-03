@@ -21,10 +21,14 @@ export interface AcquisitionOptions {
 }
 
 export interface AcquisitionStage {
-  status: "fetched" | "failed";
+  status: "fetched" | "failed" | "skipped_budget";
   pages: number;
   items: number;
   error?: string;
+}
+
+class AcquisitionBudgetExceeded extends Error {
+  constructor() { super("Acquisition page budget exceeded"); }
 }
 
 export interface AcquisitionProvenance {
@@ -65,7 +69,7 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   const failedStages: string[] = [];
   const stages: Record<string, AcquisitionStage> = {};
   let networkRequests = 0;
-  let pagesUsed = 0;
+  let budgetExhausted = false;
   let repository: RepositoryFixture | null = null;
   let rateLimit: RateLimitFixture | null = null;
   const pullRequests: PullRequestFixture[] = [];
@@ -75,27 +79,36 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   let permissions: PermissionFixture[] = [];
   let onboarding: OnboardingFixture | null = null;
 
+  const request = async <T>(action: () => Promise<T>): Promise<T> => {
+    if (networkRequests >= maxPages) { budgetExhausted = true; throw new AcquisitionBudgetExceeded(); }
+    networkRequests += 1;
+    return action();
+  };
+
   const stage = async <T>(name: string, action: () => Promise<{ pages: number; items: T[] }>): Promise<T[]> => {
+    if (budgetExhausted) {
+      stages[name] = { status: "skipped_budget", pages: 0, items: 0 };
+      failedStages.push(name);
+      return [];
+    }
     try {
       const result = await action();
       stages[name] = { status: "fetched", pages: result.pages, items: result.items.length };
-      networkRequests += result.pages;
-      pagesUsed += result.pages;
       return result.items;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown acquisition failure";
-      stages[name] = { status: "failed", pages: 0, items: 0, error: message };
+      const exhausted = error instanceof AcquisitionBudgetExceeded;
+      if (exhausted) budgetExhausted = true;
+      stages[name] = { status: exhausted ? "skipped_budget" : "failed", pages: 0, items: 0, ...(exhausted ? {} : { error: message }) };
       failedStages.push(name);
-      limitations.push(`${name} failed: ${message}`);
+      if (!exhausted) limitations.push(`${name} failed: ${message}`);
       return [];
     }
   };
 
   try {
-    repository = await options.provider.getRepository(options.repository);
-    networkRequests += 1;
+    repository = await request(() => options.provider.getRepository(options.repository));
     stages.repository = { status: "fetched", pages: 1, items: 1 };
-    pagesUsed += 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown repository acquisition failure";
     stages.repository = { status: "failed", pages: 0, items: 0, error: message };
@@ -105,10 +118,8 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   }
 
   try {
-    rateLimit = await options.provider.getRateLimit();
-    networkRequests += 1;
+    rateLimit = await request(() => options.provider.getRateLimit());
     stages.rateLimit = { status: "fetched", pages: 1, items: 1 };
-    pagesUsed += 1;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown rate-limit acquisition failure";
     stages.rateLimit = { status: "failed", pages: 0, items: 0, error: message };
@@ -120,8 +131,8 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
     const items: PullRequestFixture[] = [];
     let page = 1;
     while (true) {
-      assertPageBudget(pagesUsed + page, maxPages, options.signal);
-      const response = await options.provider.listPullRequests(options.repository, page);
+      assertNotCancelled(options.signal);
+      const response = await request(() => options.provider.listPullRequests(options.repository, page));
       items.push(...response.items.filter((pullRequest) => isWithinWindow(pullRequest.createdAt, start, end)));
       if (!response.hasNext) return { pages: page, items };
       page += 1;
@@ -132,24 +143,21 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
   for (const pullRequest of pullRequests) {
     const reviewItems = await stage(`reviews:${pullRequest.number}`, async () => collectPullRequestPages(
       (page) => options.provider.listReviews(options.repository, page, pullRequest.number),
-      maxPages,
-      pagesUsed,
+      request,
       options.signal
     ));
     reviews.push(...reviewItems);
 
     const commentItems = await stage(`comments:${pullRequest.number}`, async () => collectPullRequestPages(
       (page) => options.provider.listComments(options.repository, page, pullRequest.number),
-      maxPages,
-      pagesUsed,
+      request,
       options.signal
     ));
     comments.push(...commentItems);
 
     const eventItems = await stage(`events:${pullRequest.number}`, async () => collectPullRequestPages(
       (page) => options.provider.listEvents(options.repository, page, pullRequest.number),
-      maxPages,
-      pagesUsed,
+      request,
       options.signal
     ));
     events.push(...eventItems);
@@ -157,23 +165,30 @@ export async function acquireRepositoryData(options: AcquisitionOptions): Promis
 
   const permissionItems = await stage("permissions", async () => ({
     pages: 1,
-    items: await options.provider.getPermissions(options.repository)
+    items: await request(() => options.provider.getPermissions(options.repository))
   }));
   permissions = permissionItems;
 
   const onboardingItems = await stage("onboarding", async () => ({
     pages: 1,
-    items: [await options.provider.getOnboarding(options.repository)]
+    items: [await request(() => options.provider.getOnboarding(options.repository))]
   }));
   onboarding = onboardingItems[0] ?? null;
 
-  const detailFailures = failedStages.filter((name) => /^(reviews|comments|events):/.test(name));
+  const budgetSkipped = Object.entries(stages).filter(([, value]) => value.status === "skipped_budget");
+  if (budgetSkipped.length > 0) {
+    const affectedPullRequests = new Set(budgetSkipped.flatMap(([name]) => {
+      const match = /^(?:reviews|comments|events):(\d+)$/.exec(name);
+      return match?.[1] === undefined ? [] : [match[1]];
+    }));
+    limitations.push(`Enrichment stopped after ${networkRequests} requests at the configured ${maxPages}-request limit; ` +
+      `review/comment/event data is partial for ${affectedPullRequests.size} of ${pullRequests.length} PRs. ` +
+      "Increase --max-pages or continue the saved job.");
+  }
+  const detailFailures = failedStages.filter((name) => /^(reviews|comments|events):/.test(name) && stages[name]?.status === "failed");
   if (detailFailures.length > 0 && stages.pullRequests?.status === "fetched") {
     const days = Math.round((end - start) / 86_400_000);
-    const budgetStopped = detailFailures.some((name) => stages[name]?.error?.toLowerCase() === "acquisition page budget exceeded");
-    const enrichmentStatus = budgetStopped
-      ? `stopped at the ${maxPages}-page acquisition limit; increase --max-pages to continue`
-      : "did not complete";
+    const enrichmentStatus = "did not complete";
     limitations.push(
       `${days}d pull-request window fully collected (${pullRequests.length} PRs); review/comment/event enrichment is partial because it ${enrichmentStatus}.`
     );
@@ -188,24 +203,22 @@ interface PageCollection<T> {
 
 async function collectPullRequestPages<T>(
   fetchPage: (page: number) => Promise<{ items: T[]; hasNext: boolean }>,
-  maxPages: number,
-  pagesUsed: number,
+  request: <R>(action: () => Promise<R>) => Promise<R>,
   signal?: AbortSignal
 ): Promise<PageCollection<T>> {
   const items: T[] = [];
   let page = 1;
   while (true) {
-    assertPageBudget(pagesUsed + page, maxPages, signal);
-    const response = await fetchPage(page);
+    assertNotCancelled(signal);
+    const response = await request(() => fetchPage(page));
     items.push(...response.items);
     if (!response.hasNext) return { items, pages: page };
     page += 1;
   }
 }
 
-function assertPageBudget(pagesUsed: number, maxPages: number, signal?: AbortSignal): void {
+function assertNotCancelled(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error("Acquisition cancelled");
-  if (pagesUsed > maxPages) throw new Error("Acquisition page budget exceeded");
 }
 
 function finish(

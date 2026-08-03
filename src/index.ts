@@ -77,3 +77,19 @@ export type {
   ReportCompleteness,
   ReportWindow
 } from "./core/types.js";
+export { SqliteSnapshotStore } from "./storage/sqlite.js";
+export { runDurableWork } from "./core/jobs.js";
+export { compareReports } from "./core/comparison.js";
+export type { MetricChange, ReportComparison } from "./core/comparison.js";
+export type { DurableWorkOptions } from "./core/jobs.js";
+export { defaultDatabasePath, resolveDatabasePath } from "./storage/path.js";
+export type {
+  ObservationInput,
+  PruneOptions,
+  SaveSnapshotInput,
+  SnapshotExport,
+  SnapshotStore,
+  SnapshotSummary,
+  StoredSnapshot
+} from "./storage/types.js";
+export type { AnalysisJob, AnalysisJobStatus, AnalysisJobStore } from "./storage/types.js";

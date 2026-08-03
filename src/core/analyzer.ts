@@ -6,12 +6,17 @@ import { planAnalysis, type ExecutionBudget, type ProgressListener, type Workloa
 import type { Metric, Report, JsonObject, JsonValue } from "./types.js";
 import { GitHubClient } from "../github/client.js";
 import type { GitHubProvider } from "../github/types.js";
+import type { SnapshotStore } from "../storage/types.js";
+import { SqliteSnapshotStore } from "../storage/sqlite.js";
+import { resolveDatabasePath } from "../storage/path.js";
 
 export interface AnalyzeOptions {
   config: AnalysisConfig;
   provider?: GitHubProvider;
   generatedAt?: string;
   progress?: ProgressListener;
+  store?: SnapshotStore;
+  signal?: AbortSignal;
 }
 
 const DEFAULT_ESTIMATE: WorkloadEstimate = {
@@ -104,8 +109,16 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     repository: options.config.repository,
     windowStart,
     windowEnd,
-    maxPages: plan.budget.maxPages
+    maxPages: plan.budget.maxPages,
+    ...(options.signal === undefined ? {} : { signal: options.signal })
   });
+  const revisedEstimate = Math.max(plan.estimate.pages,
+    4 + (acquisition.provenance.stages.pullRequests?.pages ?? 0) + acquisition.pullRequests.length * 3);
+  const progressCompleted = acquisition.provenance.networkRequests;
+  options.progress?.({ type: "progress", phase: "acquisition", message: "Repository data acquisition finished",
+    completed: progressCompleted, estimatedTotal: revisedEstimate,
+    requestsUsed: acquisition.provenance.networkRequests, rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null,
+    window: `${days}d`, resumable: plan.resumable });
   const activity = calculateActivityMetrics({
     pullRequests: acquisition.pullRequests,
     reviews: acquisition.reviews,
@@ -121,19 +134,20 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     { ...activity.metrics, ...experience.metrics },
     acquisition.failedStages
   );
+  options.progress?.({ type: "progress", phase: "metrics", message: "Repository metrics calculated",
+    completed: progressCompleted, estimatedTotal: revisedEstimate, requestsUsed: acquisition.provenance.networkRequests,
+    rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null, window: `${days}d`, resumable: plan.resumable });
   const limitations = [
     ...acquisition.limitations,
     ...activity.limitations,
     ...experience.limitations,
     ...(plan.mode === "partial" ? [plan.reason] : []),
-    ...(options.config.save ? ["Snapshot persistence is not implemented yet; use --no-save until issue #11."] : []),
-    ...(options.config.includeRaw ? ["Raw payload storage is not implemented yet."] : [])
   ];
   const completeness = acquisition.completeness === "failed"
     ? "failed"
     : limitations.length > 0 || plan.mode === "partial" ? "partial" : "complete";
 
-  return {
+  const report: Report = {
     schema_version: 1,
     tool: { name: "oss-eval", version: "0.1.0" },
     target: {
@@ -157,6 +171,16 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     limitations,
     completeness
   };
+  if (options.config.save) {
+    const ownedStore = options.store === undefined;
+    const store = options.store ?? new SqliteSnapshotStore(resolveDatabasePath(options.config.dbPath));
+    try { store.save({ report, ...(options.config.includeRaw ? { raw: acquisition as unknown as JsonValue } : {}) }); }
+    finally { if (ownedStore) store.close(); }
+  }
+  options.progress?.({ type: "progress", phase: "complete", message: report.completeness === "complete" ? "Analysis complete" : "Analysis complete with limitations",
+    completed: progressCompleted, estimatedTotal: revisedEstimate, requestsUsed: acquisition.provenance.networkRequests,
+    rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null, window: `${days}d`, resumable: plan.resumable });
+  return report;
 }
 
 export { createConfig };
