@@ -52,4 +52,20 @@ describe("canonical analyzer", () => {
     expect(store.getLatest(report.target.full_name)?.report).toEqual(report);
     store.close();
   });
+
+  it("returns an actionable dry plan without calling the provider", async () => {
+    const provider = new FixtureProvider(smallRepositoryFixture);
+    const report = await analyzeRepository({ config: createConfig("fixture-owner/fixture-repo", {
+      window: "30d", dryRun: true, save: true }), provider, generatedAt: "2026-08-02T00:00:00Z" });
+    expect(provider.requests).toEqual([]);
+    expect(report.metrics).toEqual({});
+    expect(report.limitations[0]).toContain("no GitHub data was fetched");
+  });
+
+  it("propagates cancellation as a typed error", async () => {
+    const controller = new AbortController(); controller.abort();
+    await expect(analyzeRepository({ config: createConfig("fixture-owner/fixture-repo", { save: false }),
+      provider: new FixtureProvider(smallRepositoryFixture), signal: controller.signal }))
+      .rejects.toMatchObject({ code: "CANCELLED" });
+  });
 });

@@ -33,6 +33,13 @@ database is `$XDG_DATA_HOME/oss-eval/history.sqlite3` (or
 are stored only with `--include-raw`. GitHub analysis uses the authenticated
 GitHub CLI credential when available.
 
+Local reports may contain public GitHub metadata and contributor usernames.
+GitHub tokens and Authorization headers are never stored in reports, cache keys,
+SQLite fields, MCP messages, or diagnostics. Raw acquisition payloads are opt-in;
+inspect them before export. Use `snapshots prune` for retained history, or remove
+the local database file to delete all history. In Docker, mount the database path
+as a volume if history must survive container replacement.
+
 ## Analysis
 
 ```bash
@@ -54,6 +61,11 @@ node dist/cli/index.js analyze owner/repo \
 
 If the cap is reached, the report identifies the affected metrics and tells
 you which limit to raise.
+
+`--dry-run` prints a bounded work plan without contacting GitHub. Conditional
+ETag revalidation is used within a client session unless `--no-cache` is set.
+Partial reports distinguish measured, cached, unavailable, and incomplete data;
+small samples are limitations rather than strong conclusions.
 
 Use `--format jsonl` for one structured progress event per line followed by a
 final `report` event. Human progress is written to stderr; `--quiet --format

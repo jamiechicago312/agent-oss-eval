@@ -25,11 +25,22 @@ export interface GitHubClientOptions extends CredentialOptions {
   maxRetries?: number;
   sleep?: (milliseconds: number) => Promise<void>;
   signal?: AbortSignal;
+  cache?: Map<string, GitHubCacheEntry>;
+  noCache?: boolean;
+  timeoutMs?: number;
+}
+
+export interface GitHubCacheEntry {
+  data: unknown;
+  etag: string;
+  cachedAt: string;
 }
 
 export interface GitHubResponse<T> {
   data: T;
   headers: Headers;
+  cached: boolean;
+  cachedAt: string | null;
 }
 
 interface RawRepository {
@@ -124,6 +135,8 @@ export class GitHubClient implements GitHubProvider {
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly token: string | null;
   private readonly signal: AbortSignal | undefined;
+  private readonly cache: Map<string, GitHubCacheEntry>;
+  private readonly noCache: boolean;
 
   constructor(options: GitHubClientOptions = {}) {
     const auth = resolveCredentials(options);
@@ -132,7 +145,11 @@ export class GitHubClient implements GitHubProvider {
     this.fetcher = options.fetch ?? globalThis.fetch;
     this.maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
     this.sleep = options.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
-    this.signal = options.signal;
+    const timeoutSignal = options.timeoutMs === undefined ? undefined : AbortSignal.timeout(options.timeoutMs);
+    this.signal = options.signal === undefined ? timeoutSignal
+      : timeoutSignal === undefined ? options.signal : AbortSignal.any([options.signal, timeoutSignal]);
+    this.cache = options.cache ?? new Map();
+    this.noCache = options.noCache ?? false;
   }
 
   hasCredentials(): boolean {
@@ -267,6 +284,8 @@ export class GitHubClient implements GitHubProvider {
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": API_VERSION
       });
+      const cachedEntry = this.noCache ? undefined : this.cache.get(path);
+      if (cachedEntry !== undefined) headers.set("If-None-Match", cachedEntry.etag);
       if (this.token !== null) headers.set("Authorization", `Bearer ${this.token}`);
       let response: Response;
       try {
@@ -275,7 +294,7 @@ export class GitHubClient implements GitHubProvider {
           ...(this.signal === undefined ? {} : { signal: this.signal })
         });
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") throw error;
+        if (error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError")) throw error;
         if (attempt < this.maxRetries) {
           await this.sleep(this.retryDelay(attempt));
           attempt += 1;
@@ -284,9 +303,16 @@ export class GitHubClient implements GitHubProvider {
         throw new ServerError("GitHub request failed after retries");
       }
 
+      if (response.status === 304 && cachedEntry !== undefined) {
+        return { data: cachedEntry.data as T, headers: response.headers, cached: true, cachedAt: cachedEntry.cachedAt };
+      }
       if (response.ok) {
         try {
-          return { data: (await response.json()) as T, headers: response.headers };
+          const data = (await response.json()) as T;
+          const etag = response.headers.get("etag");
+          const cachedAt = new Date().toISOString();
+          if (!this.noCache && etag !== null) this.cache.set(path, { data, etag, cachedAt });
+          return { data, headers: response.headers, cached: false, cachedAt: null };
         } catch {
           throw new MalformedResponseError();
         }

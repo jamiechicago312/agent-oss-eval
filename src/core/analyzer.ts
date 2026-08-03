@@ -91,7 +91,11 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
   const days = windowDays(plan.selectedWindow);
   const windowEnd = generatedAt;
   const windowStart = options.config.since ?? isoDaysBefore(windowEnd, days);
-  const provider = options.provider ?? new GitHubClient({});
+  const provider = options.provider ?? new GitHubClient({
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+    noCache: options.config.noCache,
+    ...(options.config.budgetMs === undefined ? {} : { timeoutMs: options.config.budgetMs })
+  });
   options.progress?.({
     type: "progress",
     phase: "planning",
@@ -103,6 +107,25 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     window: typeof plan.selectedWindow === "string" ? plan.selectedWindow : `${plan.selectedWindow.days}d`,
     resumable: plan.resumable
   });
+
+  if (plan.dryRun) {
+    const report: Report = {
+      schema_version: 1,
+      tool: { name: "oss-eval", version: "0.1.0" },
+      target: { owner: options.config.repository.owner, name: options.config.repository.name,
+        full_name: options.config.repository.fullName, url: options.config.repository.url },
+      generated_at: generatedAt,
+      window: { start: windowStart, end: windowEnd, days },
+      repository: {}, metrics: {}, signals: [], comparison: null,
+      provenance: { plan: asJson(plan), requested_window: options.config.window, cache_reused: false },
+      limitations: [`Dry plan only: estimated ${plan.estimate.requests} requests, ${plan.estimate.pages} pages, and ${plan.estimate.durationMs}ms; no GitHub data was fetched.`],
+      completeness: "partial"
+    };
+    options.progress?.({ type: "progress", phase: "complete", message: "Dry plan complete; no data fetched",
+      completed: 0, estimatedTotal: plan.estimate.pages, requestsUsed: 0, rateLimitRemaining: null,
+      window: `${days}d`, resumable: plan.resumable });
+    return report;
+  }
 
   const acquisition = await acquireRepositoryData({
     provider,
