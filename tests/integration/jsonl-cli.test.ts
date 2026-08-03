@@ -14,6 +14,9 @@ describe("structured progress CLI", () => {
     expect(events.map((event) => event.type)).toEqual(["progress", "progress", "progress", "progress", "report"]);
     expect(events.slice(0, -1).map((event) => event.phase)).toEqual(["planning", "acquisition", "metrics", "complete"]);
     expect(events.at(-1).report.schema_version).toBe(1);
+    for (const event of events.filter((value) => value.type === "progress")) {
+      expect(event.completed).toBeLessThanOrEqual(event.estimatedTotal);
+    }
     expect(result.stderr).toEqual([]);
   });
 

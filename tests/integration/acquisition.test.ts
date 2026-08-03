@@ -70,4 +70,14 @@ describe("repository acquisition", () => {
     expect(result.failedStages).toEqual(["repository"]);
     expect(result.pullRequests).toEqual([]);
   });
+
+  it("stops at one shared budget and consolidates skipped enrichment", async () => {
+    const provider = new FixtureProvider(smallRepositoryFixture, { pageSize: 1 });
+    const result = await acquireRepositoryData({ provider, repository: smallRepositoryFixture.repository.ref,
+      ...window, maxPages: 5 });
+    expect(result.provenance.networkRequests).toBe(5);
+    expect(Object.values(result.provenance.stages).some((stage) => stage.status === "skipped_budget")).toBe(true);
+    expect(result.limitations.filter((limitation) => limitation.includes("configured 5-request limit"))).toHaveLength(1);
+    expect(result.limitations.some((limitation) => limitation.includes("reviews:2 failed"))).toBe(false);
+  });
 });

@@ -37,7 +37,7 @@ describe("canonical analyzer", () => {
     expect(report.metrics.time_to_first_human_review!.confidence).toBe("partial");
     expect(report.metrics.merge_rate!.confidence).toBe("measured");
     expect(report.limitations).toContain(
-      "90d pull-request window fully collected (2 PRs); review/comment/event enrichment is partial because it stopped at the 100-page acquisition limit; increase --max-pages to continue."
+      "90d pull-request window fully collected (2 PRs); review/comment/event enrichment is partial because it did not complete."
     );
   });
 

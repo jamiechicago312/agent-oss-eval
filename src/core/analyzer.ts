@@ -112,8 +112,11 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     maxPages: plan.budget.maxPages,
     ...(options.signal === undefined ? {} : { signal: options.signal })
   });
+  const revisedEstimate = Math.max(plan.estimate.pages,
+    4 + (acquisition.provenance.stages.pullRequests?.pages ?? 0) + acquisition.pullRequests.length * 3);
+  const progressCompleted = acquisition.provenance.networkRequests;
   options.progress?.({ type: "progress", phase: "acquisition", message: "Repository data acquisition finished",
-    completed: acquisition.provenance.networkRequests, estimatedTotal: plan.estimate.pages,
+    completed: progressCompleted, estimatedTotal: revisedEstimate,
     requestsUsed: acquisition.provenance.networkRequests, rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null,
     window: `${days}d`, resumable: plan.resumable });
   const activity = calculateActivityMetrics({
@@ -132,7 +135,7 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     acquisition.failedStages
   );
   options.progress?.({ type: "progress", phase: "metrics", message: "Repository metrics calculated",
-    completed: plan.estimate.pages, estimatedTotal: plan.estimate.pages, requestsUsed: acquisition.provenance.networkRequests,
+    completed: progressCompleted, estimatedTotal: revisedEstimate, requestsUsed: acquisition.provenance.networkRequests,
     rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null, window: `${days}d`, resumable: plan.resumable });
   const limitations = [
     ...acquisition.limitations,
@@ -175,7 +178,7 @@ export async function analyzeRepository(options: AnalyzeOptions): Promise<Report
     finally { if (ownedStore) store.close(); }
   }
   options.progress?.({ type: "progress", phase: "complete", message: report.completeness === "complete" ? "Analysis complete" : "Analysis complete with limitations",
-    completed: plan.estimate.pages, estimatedTotal: plan.estimate.pages, requestsUsed: acquisition.provenance.networkRequests,
+    completed: progressCompleted, estimatedTotal: revisedEstimate, requestsUsed: acquisition.provenance.networkRequests,
     rateLimitRemaining: acquisition.provenance.rateLimit?.remaining ?? null, window: `${days}d`, resumable: plan.resumable });
   return report;
 }
